@@ -5,6 +5,7 @@ from datetime import timedelta
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 
 class ProcessingStats:
@@ -119,49 +120,124 @@ class ColorPreview:
     """Generate visual color previews."""
     
     @staticmethod
-    def create_preview(color_rgb, width=50, height=8):
-        """Create a colored preview box.
+    def _rgb_to_hex(color_rgb):
+        """Convert RGB tuple to hex color.
+        
+        Args:
+            color_rgb: Tuple (R, G, B) or numpy uint8
+            
+        Returns:
+            str: Hex color code (e.g., "#e9e9e9")
+        """
+        try:
+            r, g, b = int(color_rgb[0]), int(color_rgb[1]), int(color_rgb[2])
+        except (TypeError, ValueError):
+            r, g, b = 128, 128, 128
+        
+        return f"#{r:02x}{g:02x}{b:02x}"
+    
+    @staticmethod
+    def create_color_block(color_rgb, width=30):
+        """Create a colored block using Unicode characters.
         
         Args:
             color_rgb: Tuple (R, G, B)
             width: Width in characters
-            height: Height in lines
             
         Returns:
-            str: Rich-formatted color box
+            Rich Text object with colored block
         """
-        # Create color box with background
-        rgb = color_rgb
-        if isinstance(rgb, tuple) and len(rgb) == 3:
-            # Handle numpy uint8
-            r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
-        else:
-            r, g, b = rgb
+        hex_color = ColorPreview._rgb_to_hex(color_rgb)
+        block_char = "█" * width
         
-        # Build the box
-        line = " " * width
-        return f"[on rgb({r},{g},{b})]{line}[/on rgb({r},{g},{b})]"
+        try:
+            # Try to use RGB color directly
+            return Text(block_char, style=f"on {hex_color}")
+        except:
+            # Fallback to simpler styling
+            return Text(block_char, style="on white")
     
     @staticmethod
-    def create_comparison(watermark_color, contrast_level="High"):
-        """Create a color comparison display.
+    def create_comparison(watermark_color):
+        """Create a color comparison display with real colors.
         
         Args:
             watermark_color: Tuple (R, G, B)
-            contrast_level: Contrast level string
             
         Returns:
-            str: Rich-formatted comparison
+            str: Rich-formatted comparison panel
         """
-        comparison = f"""
+        hex_color = ColorPreview._rgb_to_hex(watermark_color)
+        r, g, b = int(watermark_color[0]), int(watermark_color[1]), int(watermark_color[2])
+        
+        # Determine if color is dark or light for text contrast
+        luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        text_color = "white" if luminance < 0.5 else "black"
+        
+        # Create color blocks
+        watermark_block = Text("█" * 25, style=f"on {hex_color}")
+        document_block = Text("█" * 25, style="on white")
+        
+        # Create sample text with contrast
+        sample_text = Text("Sample Watermark", style=f"{hex_color}")
+        contrast_white = Text("On White Background", style=f"{text_color} on white")
+        contrast_light = Text("Contrast Preview", style=f"{text_color} on #f0f0f0")
+        
+        return f"""
 [bold cyan]Color Preview:[/bold cyan]
 
-Document Background:
-{ColorPreview.create_preview((255, 255, 255))}
+[bold]Hex Code:[/bold] {hex_color}
+[bold]RGB:[/bold] RGB({r}, {g}, {b})
 
-Watermark Color:
-{ColorPreview.create_preview(watermark_color)}
+[bold]Document Background:[/bold]
+{document_block}
 
-Contrast: [bold green]{contrast_level}[/bold green]
+[bold]Watermark Color:[/bold]
+{watermark_block}
+
+[bold]Text Contrast:[/bold]
+{contrast_white}
+{contrast_light}
 """
-        return comparison
+    
+    @staticmethod
+    def create_color_table(colors, i18n_t=None):
+        """Create a table with real color previews.
+        
+        Args:
+            colors: List of color dicts with 'rgb', 'coverage' keys
+            i18n_t: Translation function
+            
+        Returns:
+            Rich Table object
+        """
+        if i18n_t is None:
+            i18n_t = lambda x, **kw: x
+        
+        table = Table(title="Color Analysis", show_header=True, header_style="bold magenta")
+        table.add_column("Index", style="cyan", width=8)
+        table.add_column("Color Block", width=35)
+        table.add_column("RGB Value", style="green")
+        table.add_column("Coverage", style="blue")
+        
+        for i, color_data in enumerate(colors[:10]):
+            rgb = color_data.get('rgb', (128, 128, 128))
+            coverage = color_data.get('coverage', 0.0)
+            
+            # Create colored block
+            hex_color = ColorPreview._rgb_to_hex(rgb)
+            try:
+                block = Text("█" * 20, style=f"on {hex_color}")
+            except:
+                block = Text("█" * 20)
+            
+            r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
+            table.add_row(
+                str(i),
+                block,
+                f"({r}, {g}, {b})",
+                f"{coverage:.1f}%"
+            )
+        
+        return table
+

@@ -67,23 +67,26 @@ class ColorSelector:
         confidence_bar = "=" * filled + "-" * empty
         confidence_color = "green" if confidence >= 85 else "yellow" if confidence >= 70 else "red"
 
-        # Format recommendation panel with color preview
+        # Format recommendation panel with real color preview
         panel_content = f"""
 [bold cyan]{t('recommended_color')}:[/bold cyan]
 
-[bold]{t('rgb_value')}:[/bold] {rgb}  [bold]{t('gray_level')}:[/bold] {gray}  [bold]{t('coverage')}:[/bold] {coverage:.1f}%
+[bold]{t('rgb_value')}:[/bold] RGB{rgb}
+[bold]{t('gray_level')}:[/bold] {gray}
+[bold]{t('coverage')}:[/bold] {coverage:.1f}%
 
 [bold]{t('confidence')}:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%
 
-{ColorPreview.create_comparison(rgb, "High" if coverage > 80 else "Medium")}
+{ColorPreview.create_comparison(rgb)}
 """
 
         self.console.print(Panel(panel_content, border_style="cyan"))
 
-        # Show alternatives if available
+        # Show alternatives if available with color table
         if len(all_colors) > 1:
-            self.console.print(f"\n[dim]{t('other_colors')}:[/dim]")
-            self._display_alternatives_table(all_colors[1:4])
+            self.console.print(f"\n[bold]{t('other_colors')}:[/bold]")
+            color_table = ColorPreview.create_color_table(all_colors[1:4], i18n_t=t)
+            self.console.print(color_table)
 
     def _display_alternatives_table(self, alternatives):
         """Display alternative colors in a compact table.
