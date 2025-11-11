@@ -1,7 +1,11 @@
-"""Interactive CLI utilities for watermark color selection."""
+"""Interactive CLI utilities for watermark color selection using rich."""
 
 import click
 import numpy as np
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.style import Style
 from .color_analyzer import ColorAnalyzer
 
 
@@ -16,6 +20,7 @@ class ColorSelector:
         """
         self.analyzer = ColorAnalyzer(verbose=verbose)
         self.verbose = verbose
+        self.console = Console()
 
     def select_watermark_color_interactive(self, image_rgb, coarse=True):
         """Interactively select watermark color from image.
@@ -29,21 +34,21 @@ class ColorSelector:
         """
         num_colors = 3 if coarse else 10
 
-        click.echo("\n" + "=" * 60)
-        click.echo("WATERMARK COLOR DETECTION")
-        click.echo("=" * 60)
+        self.console.print("\n" + "=" * 60)
+        self.console.print("[bold cyan]WATERMARK COLOR DETECTION[/bold cyan]")
+        self.console.print("=" * 60)
 
         # Analyze colors
-        click.echo(f"\nAnalyzing {num_colors} most common colors in the document...")
+        self.console.print(f"\n[yellow]Analyzing {num_colors} most common colors in the document...[/yellow]")
         colors = self.analyzer.get_dominant_colors(image_rgb, num_colors=num_colors)
 
         if not colors:
-            click.echo("No colors detected. Using automatic detection.")
+            self.console.print("[red]No colors detected. Using automatic detection.[/red]")
             return None
 
         # Display options
-        click.echo("\nDetected colors (likely watermark or text):\n")
-        self._display_colors(colors)
+        self.console.print("\n[bold]Detected colors (likely watermark or text):[/bold]\n")
+        self._display_colors_table(colors)
 
         # Get user input
         while True:
@@ -55,14 +60,15 @@ class ColorSelector:
                 ).strip().lower()
 
                 if choice == 'a' or choice == '':
-                    click.echo("Using automatic color detection...")
+                    self.console.print("[green]Using automatic color detection...[/green]")
                     return None
 
                 choice_idx = int(choice)
                 if 0 <= choice_idx < len(colors):
                     selected = colors[choice_idx]
-                    click.echo(f"\n✓ Selected color: RGB{selected['rgb']}")
-                    click.echo(f"  Percentage in document: {selected['percentage']:.2f}%")
+                    
+                    # Display selected color with preview
+                    self._display_selected_color(selected)
 
                     # Ask if user wants finer control
                     if coarse and choice_idx > 0:
@@ -75,32 +81,68 @@ class ColorSelector:
 
                     return selected['rgb']
                 else:
-                    click.echo(f"Invalid choice. Please enter 0-{len(colors)-1} or 'a'")
+                    self.console.print(f"[red]Invalid choice. Please enter 0-{len(colors)-1} or 'a'[/red]")
             except ValueError:
-                click.echo("Invalid input. Please enter a number or 'a'")
+                self.console.print("[red]Invalid input. Please enter a number or 'a'[/red]")
 
-    def _display_colors(self, colors):
-        """Display color options with visual representation.
+    def _display_colors_table(self, colors):
+        """Display color options with rich table visualization.
 
         Args:
             colors: List of color dictionaries
         """
-        # Create color bar visualization
-        click.echo("Color bars:")
+        table = Table(title="Color Analysis", show_header=True, header_style="bold magenta")
+        table.add_column("Index", style="cyan", width=8)
+        table.add_column("Color Preview", width=30)
+        table.add_column("RGB Value", style="green")
+        table.add_column("Gray Level", style="yellow")
+        table.add_column("Percentage", style="blue")
+
         for i, color_data in enumerate(colors):
             rgb = color_data['rgb']
             percentage = color_data['percentage']
             gray_val = color_data['gray']
 
-            # Create visual bar (using block characters)
-            bar_length = min(int(percentage / 2), 25)
-            bar = "█" * bar_length
+            # Create visual bar using Unicode blocks
+            bar_length = min(int(percentage / 2), 20)
+            bar = "█" * bar_length + "░" * (20 - bar_length)
 
-            click.echo(
-                f"  {i}: {bar:<25} RGB{rgb} ({gray_val:3d}) - {percentage:5.1f}%"
+            # Color the bar based on the actual color
+            bar_style = f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+            table.add_row(
+                str(i),
+                f"[{bar_style}]{bar}[/{bar_style}]",
+                f"RGB{rgb}",
+                str(gray_val),
+                f"{percentage:.1f}%"
             )
 
-        click.echo()
+        self.console.print(table)
+
+    def _display_selected_color(self, color_data):
+        """Display selected color with detailed information.
+
+        Args:
+            color_data: Selected color dictionary
+        """
+        rgb = color_data['rgb']
+        percentage = color_data['percentage']
+        gray_val = color_data['gray']
+
+        # Create a colored panel for preview
+        preview_text = "   " * 10  # Large colored block
+        color_style = f"rgb({rgb[0]},{rgb[1]},{rgb[2]}) on rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+        panel_content = f"""
+[{color_style}]{preview_text}[/{color_style}]
+
+RGB Value: [green]{rgb}[/green]
+Gray Level: [yellow]{gray_val}[/yellow]
+Percentage in document: [blue]{percentage:.2f}%[/blue]
+        """
+
+        self.console.print(Panel(panel_content, title="[bold]Selected Watermark Color[/bold]", border_style="green"))
 
     def get_color_for_detection(self, first_image_rgb, auto_detect=False):
         """Get watermark color for detection.
@@ -121,10 +163,10 @@ class ColorSelector:
                 default=False
             )
             if not use_interactive:
-                click.echo("Using automatic color detection...")
+                self.console.print("[green]Using automatic color detection...[/green]")
                 return None
         except (EOFError, click.Abort):
-            click.echo("\nUsing automatic color detection...")
+            self.console.print("\n[green]Using automatic color detection...[/green]")
             return None
 
         # Ask for coarse vs fine selection

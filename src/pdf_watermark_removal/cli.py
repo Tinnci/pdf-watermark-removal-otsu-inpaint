@@ -4,10 +4,17 @@ import sys
 from pathlib import Path
 
 import click
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
+from rich.style import Style
 
 from .pdf_processor import PDFProcessor
 from .watermark_remover import WatermarkRemover
 from .color_selector import ColorSelector
+
+
+console = Console()
 
 
 def parse_pages(pages_str):
@@ -118,15 +125,17 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
     By default, offers interactive color selection. Use --auto-color to skip.
     """
     try:
+        # Display header
+        console.print(Panel(
+            "[bold cyan]PDF Watermark Removal Tool[/bold cyan]\n"
+            f"[yellow]Input:[/yellow]  {input_pdf}\n"
+            f"[yellow]Output:[/yellow] {output_pdf}",
+            title="[bold]Configuration[/bold]",
+            border_style="cyan"
+        ))
+
         if verbose:
-            click.echo("PDF Watermark Removal Tool")
-            click.echo(f"Input: {input_pdf}")
-            click.echo(f"Output: {output_pdf}")
-            click.echo(f"Kernel size: {kernel_size}")
-            click.echo(f"Inpaint radius: {inpaint_radius}")
-            click.echo(f"Multi-pass: {multi_pass}")
-            click.echo(f"DPI: {dpi}")
-            click.echo()
+            console.print("\n[bold blue]Verbose Mode Enabled[/bold blue]")
 
         pages_list = parse_pages(pages)
 
@@ -137,11 +146,14 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
 
         # Interactive color selection for first page only
         if not auto_color and not watermark_color:
-            with click.progressbar(
-                length=1, label="Loading first page", show_pos=False
-            ) as bar:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                transient=True
+            ) as progress:
+                task = progress.add_task("[cyan]Loading first page...", total=None)
                 first_page_images = processor.pdf_to_images(input_pdf, pages=[1])
-                bar.update(1)
+                progress.stop_task(task)
 
             if first_page_images:
                 selector = ColorSelector(verbose=verbose)
@@ -160,56 +172,81 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
         )
 
         # Convert all pages
-        if verbose:
-            click.echo("Step 1: Converting PDF to images...")
-        with click.progressbar(
-            length=1, label="Loading PDF", show_pos=False
-        ) as bar:
+        console.print("\n[bold]Step 1:[/bold] [yellow]Converting PDF to images...[/yellow]")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            transient=True
+        ) as progress:
+            task = progress.add_task("[cyan]Loading PDF", total=1)
             images = processor.pdf_to_images(input_pdf, pages=pages_list)
-            bar.update(1)
+            progress.update(task, completed=1)
+
+        page_info = f"all {len(images)}" if not pages_list else f"{len(pages_list)} specified"
+        console.print(f"[green]Loaded {page_info} pages[/green]\n")
 
         if verbose:
             if pages_list:
-                click.echo(f"Processing {len(pages_list)} specified pages")
+                console.print(f"[blue]Processing {len(pages_list)} specified pages[/blue]")
             else:
-                click.echo(f"Processing all {len(images)} pages")
-            click.echo("Step 2: Removing watermarks...")
+                console.print(f"[blue]Processing all {len(images)} pages[/blue]")
+
+        console.print("[bold]Step 2:[/bold] [yellow]Removing watermarks...[/yellow]")
 
         # Process images with progress bar
         processed_images = []
-        with click.progressbar(
-            length=len(images), label="Removing watermarks", show_pos=True
-        ) as bar:
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("-"),
+            TimeRemainingColumn()
+        ) as progress:
+            task = progress.add_task("[cyan]Processing pages", total=len(images))
+            
             for i, img in enumerate(images):
                 if multi_pass > 1:
                     processed = remover.remove_watermark_multi_pass(img, passes=multi_pass)
                 else:
                     processed = remover.remove_watermark(img)
                 processed_images.append(processed)
-                bar.update(1)
+                progress.update(task, advance=1)
 
-        if verbose:
-            click.echo("Step 3: Converting images back to PDF...")
-        with click.progressbar(
-            length=1, label="Saving PDF", show_pos=False
-        ) as bar:
+        console.print("[green]Watermark removal completed[/green]\n")
+
+        console.print("[bold]Step 3:[/bold] [yellow]Converting images back to PDF...[/yellow]")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True
+        ) as progress:
+            task = progress.add_task("[cyan]Saving PDF", total=None)
             processor.images_to_pdf(processed_images, output_pdf)
-            bar.update(1)
+            progress.stop_task(task)
 
-        click.echo(f"\nWatermark removal completed successfully!")
-        click.echo(f"Output saved to: {output_pdf}")
+        # Success message
+        console.print(Panel(
+            f"[green]Watermark removal completed successfully![/green]\n"
+            f"[cyan]Output saved to:[/cyan] [bold yellow]{output_pdf}[/bold yellow]",
+            title="[bold green]Success[/bold green]",
+            border_style="green"
+        ))
 
     except FileNotFoundError as e:
-        click.echo(f"Error: {e}", err=True)
+        console.print(Panel(f"[red]{e}[/red]", title="[bold red]Error[/bold red]", border_style="red"))
         sys.exit(1)
     except ImportError as e:
-        click.echo(f"Error: {e}", err=True)
+        console.print(Panel(f"[red]{e}[/red]", title="[bold red]Error[/bold red]", border_style="red"))
         sys.exit(1)
     except Exception as e:
         if verbose:
             import traceback
             traceback.print_exc()
-        click.echo(f"Error: {e}", err=True)
+        console.print(Panel(f"[red]{e}[/red]", title="[bold red]Error[/bold red]", border_style="red"))
         sys.exit(1)
 
 
