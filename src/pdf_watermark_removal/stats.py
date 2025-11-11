@@ -127,14 +127,16 @@ class ColorPreview:
             color_rgb: Tuple (R, G, B) or numpy uint8
             
         Returns:
-            str: Hex color code (e.g., "#e9e9e9")
+            Tuple (hex_str, r, g, b) - hex color code and integer values
         """
         try:
-            r, g, b = int(color_rgb[0]), int(color_rgb[1]), int(color_rgb[2])
-        except (TypeError, ValueError):
+            r = int(color_rgb[0]) if hasattr(color_rgb[0], '__int__') else int(color_rgb[0])
+            g = int(color_rgb[1]) if hasattr(color_rgb[1], '__int__') else int(color_rgb[1])
+            b = int(color_rgb[2]) if hasattr(color_rgb[2], '__int__') else int(color_rgb[2])
+        except (TypeError, ValueError, IndexError):
             r, g, b = 128, 128, 128
         
-        return f"#{r:02x}{g:02x}{b:02x}"
+        return f"#{r:02x}{g:02x}{b:02x}", r, g, b
     
     @staticmethod
     def create_color_block(color_rgb, width=30):
@@ -147,7 +149,7 @@ class ColorPreview:
         Returns:
             Rich Text object with colored block
         """
-        hex_color = ColorPreview._rgb_to_hex(color_rgb)
+        hex_color, r, g, b = ColorPreview._rgb_to_hex(color_rgb)
         block_char = "█" * width
         
         try:
@@ -167,8 +169,7 @@ class ColorPreview:
         Returns:
             str: Rich-formatted comparison panel
         """
-        hex_color = ColorPreview._rgb_to_hex(watermark_color)
-        r, g, b = int(watermark_color[0]), int(watermark_color[1]), int(watermark_color[2])
+        hex_color, r, g, b = ColorPreview._rgb_to_hex(watermark_color)
         
         # Determine if color is dark or light for text contrast
         luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
@@ -214,28 +215,35 @@ class ColorPreview:
         if i18n_t is None:
             i18n_t = lambda x, **kw: x
         
-        table = Table(title="Color Analysis", show_header=True, header_style="bold magenta")
-        table.add_column("Index", style="cyan", width=8)
-        table.add_column("Color Block", width=35)
-        table.add_column("RGB Value", style="green")
-        table.add_column("Coverage", style="blue")
+        table = Table(show_header=True, header_style="bold magenta", padding=(0, 1))
+        table.add_column("#", style="cyan", width=4)
+        table.add_column("Preview", width=25)
+        table.add_column("RGB", style="green", width=18)
+        table.add_column("Coverage", style="blue", width=12)
         
         for i, color_data in enumerate(colors[:10]):
             rgb = color_data.get('rgb', (128, 128, 128))
             coverage = color_data.get('coverage', 0.0)
             
-            # Create colored block
-            hex_color = ColorPreview._rgb_to_hex(rgb)
+            # Safely convert to int
             try:
-                block = Text("█" * 20, style=f"on {hex_color}")
+                r = int(rgb[0]) if hasattr(rgb[0], '__int__') else int(rgb[0])
+                g = int(rgb[1]) if hasattr(rgb[1], '__int__') else int(rgb[1])
+                b = int(rgb[2]) if hasattr(rgb[2], '__int__') else int(rgb[2])
+            except (TypeError, ValueError, IndexError):
+                r, g, b = 128, 128, 128
+            
+            # Create colored block
+            hex_color = f"#{r:02x}{g:02x}{b:02x}"
+            try:
+                block = Text("  " * 10 + "  ", style=f"on {hex_color}")
             except:
                 block = Text("█" * 20)
             
-            r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
             table.add_row(
                 str(i),
                 block,
-                f"({r}, {g}, {b})",
+                f"RGB({r},{g},{b})",
                 f"{coverage:.1f}%"
             )
         

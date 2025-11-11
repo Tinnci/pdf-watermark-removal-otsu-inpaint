@@ -104,8 +104,16 @@ class ColorSelector:
             coverage = color['coverage']
             percentage = color['percentage']
             
+            # Safely convert to int
+            try:
+                r = int(rgb[0]) if hasattr(rgb[0], '__int__') else int(rgb[0])
+                g = int(rgb[1]) if hasattr(rgb[1], '__int__') else int(rgb[1])
+                b = int(rgb[2]) if hasattr(rgb[2], '__int__') else int(rgb[2])
+            except (TypeError, ValueError, IndexError):
+                r, g, b = 128, 128, 128
+            
             table.add_row(
-                f"{rgb}",
+                f"RGB({r},{g},{b})",
                 f"{coverage:.1f}%",
                 f"{percentage:.1f}% of text"
             )
@@ -172,19 +180,38 @@ class ColorSelector:
         # Display selection table
         table = Table(show_header=True, header_style="bold magenta", padding=(0, 1))
         table.add_column("#", style="cyan", width=3)
-        table.add_column("Coverage %", style="yellow", width=10)
-        table.add_column("RGB Value", style="green")
+        table.add_column("Preview", width=25)
+        table.add_column("RGB Value", style="green", width=18)
+        table.add_column("Coverage", style="yellow", width=12)
 
         for i, color in enumerate(colors[:10]):
             rgb = color['rgb']
             coverage = color['coverage']
             
+            # Safely convert to int
+            try:
+                r = int(rgb[0]) if hasattr(rgb[0], '__int__') else int(rgb[0])
+                g = int(rgb[1]) if hasattr(rgb[1], '__int__') else int(rgb[1])
+                b = int(rgb[2]) if hasattr(rgb[2], '__int__') else int(rgb[2])
+            except (TypeError, ValueError, IndexError):
+                r, g, b = 128, 128, 128
+            
+            # Create colored block
+            hex_color = f"#{r:02x}{g:02x}{b:02x}"
+            try:
+                from rich.text import Text
+                block = Text("  " * 10 + "  ", style=f"on {hex_color}")
+            except:
+                from rich.text import Text
+                block = Text("█" * 20)
+            
             table.add_row(
                 str(i),
-                f"{coverage:.1f}%",
-                f"{rgb}"
+                block,
+                f"RGB({r},{g},{b})",
+                f"{coverage:.1f}%"
             )
-
+        
         self.console.print(table)
 
         # Get selection
