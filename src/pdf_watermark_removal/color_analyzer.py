@@ -2,6 +2,16 @@
 
 import cv2
 import numpy as np
+from enum import Enum
+
+
+class ColorType(Enum):
+    """Color classification types."""
+
+    BACKGROUND = "background"
+    WATERMARK = "watermark"
+    TEXT = "text"
+    NOISE = "noise"
 
 
 class ColorAnalyzer:
@@ -15,6 +25,42 @@ class ColorAnalyzer:
         """
         self.verbose = verbose
 
+    @staticmethod
+    def _classify_color(gray_val, coverage):
+        """Intelligently classify color type and calculate confidence.
+
+        Args:
+            gray_val: Grayscale value (0-255)
+            coverage: Coverage percentage (0-100)
+
+        Returns:
+            Tuple (color_type, confidence) where confidence is 0-100
+        """
+        gray_val = int(gray_val)
+
+        # Background detection: very light (240-255) and high coverage (>60%)
+        if 240 <= gray_val <= 255 and coverage > 60:
+            return ColorType.BACKGROUND, 0
+
+        # Watermark detection: mid-high grayscale (180-240) and moderate coverage (2-15%)
+        if 180 <= gray_val <= 240 and 2 <= coverage <= 15:
+            # Confidence peaks around gray_val=210 and coverage=8%
+            # But the model should be more lenient
+            gray_factor = 1 - abs(gray_val - 210) / 40  # peaks at 210, range 170-250
+            coverage_factor = 1 - abs(coverage - 8) / 8  # peaks at 8%, range 0-16%
+            base_confidence = (gray_factor * 0.5 + coverage_factor * 0.5) * 100
+            # Add bonus for typical watermark coverage range
+            if 3 <= coverage <= 10:
+                base_confidence = min(100, base_confidence + 30)
+            return ColorType.WATERMARK, max(20, min(100, base_confidence))
+
+        # Text detection: dark (0-80) and low coverage (<5%)
+        if 0 <= gray_val <= 80 and coverage < 5:
+            return ColorType.TEXT, 0
+
+        # Noise for everything else
+        return ColorType.NOISE, 0
+
     def analyze_watermark_color(self, image_rgb):
         """Intelligently analyze and recommend watermark color.
 
@@ -22,7 +68,7 @@ class ColorAnalyzer:
             image_rgb: Input image in RGB format
 
         Returns:
-            List of color dicts with recommended color first
+            List of color dicts sorted by confidence, watermark first
         """
         if self.verbose:
             print("Analyzing watermark color distribution...")
@@ -34,56 +80,47 @@ class ColorAnalyzer:
         total_pixels = gray.shape[0] * gray.shape[1]
 
         colors_info = []
-        for i, idx in enumerate(sorted_idx[:10]):
+        for i, idx in enumerate(sorted_idx[:20]):  # Check top 20 colors
             gray_val = unique_grays[idx]
             count = counts[idx]
             coverage = (count / total_pixels) * 100
 
-            rgb_color = (gray_val, gray_val, gray_val)
+            rgb_color = (int(gray_val), int(gray_val), int(gray_val))
 
-            # Classify color type
-            color_type = "background"
-            if gray_val < 100 and coverage < 5:
-                color_type = "text"
-            elif 150 <= gray_val <= 250 and 2 <= coverage <= 15:
-                color_type = "watermark"
-            elif gray_val > 240 and coverage > 80:
-                color_type = "background"
+            # Classify color with confidence
+            color_type, confidence = self._classify_color(gray_val, coverage)
 
             colors_info.append(
                 {
                     "index": i,
                     "rgb": rgb_color,
                     "bgr": tuple(reversed(rgb_color)),
-                    "gray": gray_val,
+                    "gray": int(gray_val),
                     "count": count,
                     "coverage": coverage,
                     "color_type": color_type,
+                    "confidence": confidence,
                 }
             )
 
-        if colors_info:
-            # Prioritize watermark-type colors
-            watermark_colors = [
-                c for c in colors_info if c["color_type"] == "watermark"
-            ]
-            if watermark_colors:
-                recommended = watermark_colors[0]
-                recommended["confidence"] = 90
-                recommended["is_recommended"] = True
-            else:
-                recommended = colors_info[0]
-                coverage = recommended["coverage"]
-                if coverage > 40:
-                    confidence = 95
-                elif coverage > 30:
-                    confidence = 85
-                elif coverage > 20:
-                    confidence = 75
-                else:
-                    confidence = 65
-                recommended["confidence"] = confidence
-                recommended["is_recommended"] = True
+        # Sort by confidence (descending), then by color type priority
+        type_priority = {
+            ColorType.WATERMARK: 3,
+            ColorType.TEXT: 2,
+            ColorType.NOISE: 1,
+            ColorType.BACKGROUND: 0,
+        }
+
+        colors_info.sort(
+            key=lambda x: (x["confidence"], type_priority.get(x["color_type"], 0)),
+            reverse=True,
+        )
+
+        # Mark the best watermark as recommended
+        for color in colors_info:
+            if color["color_type"] == ColorType.WATERMARK:
+                color["is_recommended"] = True
+                break
 
         return colors_info
 

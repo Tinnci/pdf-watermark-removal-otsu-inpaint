@@ -85,12 +85,12 @@ class WatermarkDetector:
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
 
         if self.verbose:
-            print("Applying Otsu thresholding...")
+            print("Applying adaptive thresholding for better watermark detection...")
 
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-        # Invert to get darker regions (watermarks typically darker)
-        binary_inv = cv2.bitwise_not(binary)
+        # Use adaptive thresholding instead of simple Otsu for better results
+        binary = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
 
         kernel = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
@@ -99,27 +99,53 @@ class WatermarkDetector:
         if self.verbose:
             print("Applying morphological operations...")
 
-        # Apply morphological operations
-        opened = cv2.morphologyEx(binary_inv, cv2.MORPH_OPEN, kernel, iterations=1)
+        # Apply morphological operations to clean up the mask
+        opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
         mask = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-        # Additional color-based detection
-        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
-        s_channel = hsv[:, :, 1]
+        # Combine with color-based detection for better watermark isolation
+        if self.watermark_color is not None:
+            if self.verbose:
+                print("Combining with color-based watermark detection...")
 
-        # Low saturation regions (text, watermarks)
-        color_mask = s_channel < 50
+            # Extract target gray value from watermark color (handle both RGB and BGR)
+            if (
+                isinstance(self.watermark_color, (tuple, list))
+                and len(self.watermark_color) >= 3
+            ):
+                target_gray = int(
+                    np.mean(self.watermark_color[:3])
+                )  # Use first 3 components
+            else:
+                target_gray = self.watermark_color[0] if self.watermark_color else 200
 
-        # Combine thresholding and color detection
-        combined_mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
+            # Create color-based mask: pixels close to watermark color
+            color_diff = np.abs(gray.astype(int) - target_gray)
+            color_mask = color_diff < 30  # Tolerance of 30 gray levels
+
+            # Combine both masks
+            mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
+        else:
+            # Fallback: use saturation-based detection
+            hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+            s_channel = hsv[:, :, 1]
+
+            # Low saturation regions (text, watermarks)
+            # Use adaptive saturation threshold based on image statistics
+            saturation_mean = np.mean(s_channel)
+            saturation_threshold = max(30, int(saturation_mean * 0.6))
+            color_mask = s_channel < saturation_threshold
+
+            # Combine thresholding and color detection
+            mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
 
         if self.verbose:
-            detected_pixels = np.count_nonzero(combined_mask)
-            total_pixels = combined_mask.shape[0] * combined_mask.shape[1]
+            detected_pixels = np.count_nonzero(mask)
+            total_pixels = mask.shape[0] * mask.shape[1]
             percentage = (detected_pixels / total_pixels) * 100
             print(f"Detected watermark coverage: {percentage:.2f}%")
 
-        return combined_mask
+        return mask
 
     def refine_mask(self, mask, min_area=100):
         """Refine the detected mask by removing small noise.

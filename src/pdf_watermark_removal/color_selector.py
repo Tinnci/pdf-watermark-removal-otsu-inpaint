@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.style import Style
 
-from .color_analyzer import ColorAnalyzer
+from .color_analyzer import ColorAnalyzer, ColorType
 from .stats import ColorPreview
 from .i18n import t
 
@@ -45,30 +45,43 @@ class ColorSelector:
         # Analyze and recommend
         colors = self.analyzer.analyze_watermark_color(image_rgb)
 
-        if not colors:
+        # Filter out background colors
+        valid_colors = [c for c in colors if c["color_type"] != ColorType.BACKGROUND]
+
+        if not valid_colors:
             self.console.print(
                 "[red]✗ No watermark colors detected. Using automatic detection.[/red]"
             )
             return None
 
-        # Display recommended color with confidence
-        recommended = colors[0]
-        self._display_recommendation(recommended, colors)
+        # Find best watermark
+        recommended = None
+        for color in valid_colors:
+            if color["color_type"] == ColorType.WATERMARK:
+                recommended = color
+                break
+
+        # Fallback to first valid color if no watermark found
+        if not recommended:
+            recommended = valid_colors[0]
+
+        self._display_recommendation(recommended, valid_colors)
 
         # Smart decision tree
-        return self._interactive_decision(recommended, colors)
+        return self._interactive_decision(recommended, valid_colors)
 
     def _display_recommendation(self, recommended, all_colors):
         """Display the recommended color with confidence and alternatives.
 
         Args:
             recommended: Recommended color dict
-            all_colors: All detected colors
+            all_colors: All detected colors (already filtered)
         """
         rgb = recommended["rgb"]
         gray = recommended["gray"]
         confidence = recommended.get("confidence", 0)
         coverage = recommended["coverage"]
+        color_type = recommended["color_type"]
 
         # Create ASCII confidence bar for Windows compatibility
         filled = int(confidence / 5)
@@ -78,13 +91,13 @@ class ColorSelector:
             "green" if confidence >= 85 else "yellow" if confidence >= 70 else "red"
         )
 
-        # Check if this is a text color (dark, low coverage)
-        color_type_warning = ""
-        if gray < 100 and recommended.get("coverage", 0) < 5:
-            color_type_warning = (
-                "\n[yellow]⚠️  Warning: This appears to be text color, "
-                "not a watermark[/yellow]"
-            )
+        # Type indicator with emoji
+        type_indicator = {
+            ColorType.WATERMARK: "[yellow]💧 WATERMARK[/yellow]",
+            ColorType.TEXT: "[cyan]📝 TEXT[/cyan]",
+            ColorType.NOISE: "[red]⚠️  NOISE[/red]",
+            ColorType.BACKGROUND: "[red]❌ BACKGROUND[/red]",
+        }.get(color_type, "[gray]UNKNOWN[/gray]")
 
         # Format recommendation panel with real color preview
         panel_content = f"""
@@ -93,8 +106,9 @@ class ColorSelector:
 [bold]{t("rgb_value")}:[/bold] RGB{rgb}
 [bold]{t("gray_level")}:[/bold] {gray}
 [bold]{t("coverage")}:[/bold] {coverage:.1f}%
+[bold]Type:[/bold] {type_indicator}
 
-[bold]{t("confidence")}:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%{color_type_warning}
+[bold]{t("confidence")}:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {int(confidence)}%
 
 {ColorPreview.create_comparison(rgb)}
 """
@@ -102,9 +116,15 @@ class ColorSelector:
         self.console.print(Panel(panel_content, border_style="cyan"))
 
         # Show alternatives if available with color table
-        if len(all_colors) > 1:
+        # Filter to show watermark and text types only
+        alternatives = [
+            c
+            for c in all_colors[1:]
+            if c["color_type"] in (ColorType.WATERMARK, ColorType.TEXT)
+        ]
+        if alternatives:
             self.console.print(f"\n[bold]{t('other_colors')}:[/bold]")
-            color_table = ColorPreview.create_color_table(all_colors[1:4], i18n_t=t)
+            color_table = ColorPreview.create_color_table(alternatives[:3], i18n_t=t)
             self.console.print(color_table)
 
     def _display_alternatives_table(self, alternatives):
@@ -186,23 +206,25 @@ class ColorSelector:
         """Let user select from alternatives with visual table.
 
         Args:
-            colors: List of color dicts
+            colors: List of color dicts (already filtered)
 
         Returns:
             Selected color or None
         """
         self.console.print("\n[bold]Select from available colors:[/bold]\n")
 
-        # Display selection table
+        # Display selection table with type info
         table = Table(show_header=True, header_style="bold magenta", padding=(0, 1))
         table.add_column("#", style="cyan", width=3)
         table.add_column("Preview", width=25)
         table.add_column("RGB Value", style="green", width=18)
         table.add_column("Coverage", style="yellow", width=12)
+        table.add_column("Type", style="blue", width=12)
 
         for i, color in enumerate(colors[:10]):
             rgb = color["rgb"]
             coverage = color["coverage"]
+            color_type = color["color_type"]
 
             # Safely convert to int
             try:
@@ -219,7 +241,15 @@ class ColorSelector:
             except Exception:
                 block = Text("█" * 15)
 
-            table.add_row(str(i), block, f"RGB({r},{g},{b})", f"{coverage:.1f}%")
+            type_label = (
+                color_type.value.upper()
+                if hasattr(color_type, "value")
+                else str(color_type)
+            )
+
+            table.add_row(
+                str(i), block, f"RGB({r},{g},{b})", f"{coverage:.1f}%", type_label
+            )
 
         self.console.print(table)
 

@@ -218,10 +218,10 @@ class ColorPreview:
 
     @staticmethod
     def create_color_table(colors, i18n_t=None):
-        """Create a table with real color previews.
+        """Create a table with real color previews and type info.
 
         Args:
-            colors: List of color dicts with 'rgb', 'coverage' keys
+            colors: List of color dicts with 'rgb', 'coverage', 'color_type' keys
             i18n_t: Translation function
 
         Returns:
@@ -239,10 +239,12 @@ class ColorPreview:
         table.add_column("Preview", width=25)
         table.add_column("RGB", style="green", width=18)
         table.add_column("Coverage", style="blue", width=12)
+        table.add_column("Type", style="yellow", width=12)
 
         for i, color_data in enumerate(colors[:10]):
             rgb = color_data.get("rgb", (128, 128, 128))
             coverage = color_data.get("coverage", 0.0)
+            color_type = color_data.get("color_type", "unknown")
 
             # Safely convert to int
             try:
@@ -259,6 +261,15 @@ class ColorPreview:
             except Exception:
                 block = Text("█" * 20)
 
-            table.add_row(str(i), block, f"RGB({r},{g},{b})", f"{coverage:.1f}%")
+            # Format type
+            type_label = (
+                color_type.value.upper()
+                if hasattr(color_type, "value")
+                else str(color_type).upper()
+            )
+
+            table.add_row(
+                str(i), block, f"RGB({r},{g},{b})", f"{coverage:.1f}%", type_label
+            )
 
         return table
