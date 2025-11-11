@@ -93,6 +93,12 @@ def parse_color(color_str):
     help="Radius for inpainting algorithm",
 )
 @click.option(
+    "--inpaint-strength",
+    default=1.0,
+    type=float,
+    help="Inpainting strength (0.5=light, 1.0=medium, 1.5=strong)",
+)
+@click.option(
     "--pages",
     default=None,
     type=str,
@@ -123,6 +129,12 @@ def parse_color(color_str):
     help="Skip interactive color selection, use automatic detection",
 )
 @click.option(
+    "--protect-text",
+    is_flag=True,
+    default=True,
+    help="Protect dark text from being removed",
+)
+@click.option(
     "--lang",
     default=None,
     type=str,
@@ -139,11 +151,13 @@ def main(
     output_pdf,
     kernel_size,
     inpaint_radius,
+    inpaint_strength,
     pages,
     multi_pass,
     dpi,
     color,
     auto_color,
+    protect_text,
     lang,
     verbose,
 ):
@@ -198,9 +212,11 @@ def main(
         remover = WatermarkRemover(
             kernel_size=kernel_size,
             inpaint_radius=inpaint_radius,
+            inpaint_strength=inpaint_strength,
             verbose=verbose,
             auto_detect_color=watermark_color is None,
             watermark_color=watermark_color,
+            protect_text=protect_text,
         )
 
         # Convert all pages

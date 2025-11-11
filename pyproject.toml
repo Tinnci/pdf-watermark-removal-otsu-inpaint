@@ -8,6 +8,25 @@ version = "0.1.0"
 description = "Remove watermarks from PDF using Otsu threshold segmentation and OpenCV inpaint"
 readme = "README.md"
 requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [{name = "Tinnci"}]
+repository = "https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint"
+homepage = "https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint"
+keywords = ["pdf", "watermark", "removal", "otsu", "inpaint", "image-processing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics :: Presentation",
+    "Topic :: Office/Business",
+]
 dependencies = [
     "opencv-python>=4.8.0",
     "numpy>=1.21.0",

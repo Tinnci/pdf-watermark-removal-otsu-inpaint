@@ -13,6 +13,7 @@ class WatermarkDetector:
         verbose=False,
         auto_detect_color=True,
         watermark_color=None,
+        protect_text=True,
     ):
         """Initialize the watermark detector.
 
@@ -21,11 +22,13 @@ class WatermarkDetector:
             verbose: Enable verbose logging
             auto_detect_color: Automatically detect watermark color
             watermark_color: Watermark color (R, G, B) or None
+            protect_text: Protect dark text from being removed
         """
         self.kernel_size = kernel_size
         self.verbose = verbose
         self.auto_detect_color = auto_detect_color
         self.watermark_color = watermark_color
+        self.protect_text = protect_text
 
     def detect_watermark_color(self, image_rgb):
         """Detect the dominant watermark color using color analysis.
@@ -65,6 +68,24 @@ class WatermarkDetector:
                 return bgr_color
 
         return None
+
+    def get_text_protect_mask(self, gray):
+        """Create a mask to protect dark text regions from being removed.
+
+        Args:
+            gray: Grayscale image
+
+        Returns:
+            Binary mask protecting text areas (255 where text should be protected)
+        """
+        # Identify dark regions (typically text) with gray level 0-80
+        _, text_protect = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
+        
+        # Remove small noise from text protection mask
+        kernel_protect = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        text_protect = cv2.morphologyEx(text_protect, cv2.MORPH_OPEN, 
+                                       kernel_protect, iterations=1)
+        return text_protect
 
     def detect_watermark_mask(self, image_rgb):
         """Detect watermark regions using Otsu thresholding and color analysis.
@@ -143,6 +164,14 @@ class WatermarkDetector:
         # Set mask to 0 where background_mask is 255 (white areas)
         mask[background_mask == 255] = 0
 
+        # Protect dark text regions if enabled
+        if self.protect_text:
+            if self.verbose:
+                print("Protecting dark text regions from removal...")
+            text_protect_mask = self.get_text_protect_mask(gray)
+            # Only keep watermark pixels that are NOT in text regions
+            mask = cv2.bitwise_and(mask, text_protect_mask)
+
         if self.verbose:
             detected_pixels = np.count_nonzero(mask)
             total_pixels = mask.shape[0] * mask.shape[1]
@@ -151,12 +180,13 @@ class WatermarkDetector:
 
         return mask
 
-    def refine_mask(self, mask, min_area=100):
-        """Refine the detected mask by removing small noise.
+    def refine_mask(self, mask, min_area=100, max_area=5000):
+        """Refine the detected mask by removing small noise and text-like components.
 
         Args:
             mask: Binary mask to refine
             min_area: Minimum area for connected components
+            max_area: Maximum area to avoid keeping large text blocks
 
         Returns:
             Refined mask
@@ -165,7 +195,16 @@ class WatermarkDetector:
 
         refined = np.zeros_like(mask)
         for i in range(1, num_labels):
-            if stats[i, cv2.CC_STAT_AREA] >= min_area:
+            area = stats[i, cv2.CC_STAT_AREA]
+            width = stats[i, cv2.CC_STAT_WIDTH]
+            height = stats[i, cv2.CC_STAT_HEIGHT]
+            
+            # Calculate aspect ratio to filter out text lines
+            aspect_ratio = width / height if height > 0 else 0
+            
+            # Keep components that are: within area range AND not thin/elongated (text-like)
+            # Aspect ratio < 10 filters out thin text lines which tend to be very elongated
+            if min_area <= area <= max_area and aspect_ratio < 10:
                 refined[labels == i] = 255
 
         return refined

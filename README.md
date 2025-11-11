@@ -1,5 +1,11 @@
 # PDF Watermark Removal Tool
 
+[![PyPI version](https://badge.fury.io/py/pdf-watermark-removal-otsu-inpaint.svg)](https://pypi.org/project/pdf-watermark-removal-otsu-inpaint/)
+[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint/releases)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub](https://img.shields.io/badge/GitHub-Tinnci-black.svg)](https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint)
+
 A command-line tool to remove watermarks from PDF files using advanced image processing techniques including adaptive thresholding, intelligent color detection, and OpenCV inpainting. Features interactive watermark color selection and beautiful CLI with progress visualization.
 
 ## 🎯 Key Features
@@ -313,32 +319,6 @@ Factors affecting speed:
 ## License
 
 MIT
-
-## Changelog
-
-### v0.1.0 (2024)
-**Initial Release - Production Ready**
-
-**Core Features:**
-- ✅ Multi-stage watermark detection (adaptive thresholding + color analysis)
-- ✅ Intelligent color classification (BACKGROUND/WATERMARK/TEXT/NOISE)
-- ✅ OpenCV TELEA inpainting with dynamic parameters
-- ✅ Interactive color selection with confidence scoring
-- ✅ Multi-pass progressive watermark removal
-- ✅ Support for batch processing and page ranges
-
-**Algorithm Improvements:**
-- ✅ Adaptive Gaussian thresholding (replaces simple Otsu)
-- ✅ Background protection (excludes white/bright areas)
-- ✅ Color space accuracy (RGB ↔ BGR proper handling)
-- ✅ Dynamic inpaint radius based on coverage
-- ✅ Morphological noise removal with connected components
-
-**Quality Assurance:**
-- ✅ ruff linting compliance
-- ✅ Comprehensive error handling
-- ✅ Detailed logging and statistics
-- ✅ Verified on multiple PDF types
 
 ## Contributing
 
