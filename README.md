@@ -1,21 +1,37 @@
 # PDF Watermark Removal Tool
 
-A command-line UV tool to remove watermarks from PDF files using Otsu threshold segmentation and OpenCV inpaint with interactive watermark color detection.
+A command-line tool to remove watermarks from PDF files using advanced image processing techniques including adaptive thresholding, intelligent color detection, and OpenCV inpainting. Features interactive watermark color selection and beautiful CLI with progress visualization.
 
-## Features
+## 🎯 Key Features
 
-- **Otsu Threshold Segmentation**: Automatically detects watermark regions using Otsu's method
-- **OpenCV Inpaint**: Intelligently removes watermarks while preserving document content
-- **Interactive Color Detection**: Visual color picker to select watermark color from the document
-  - Coarse mode: Shows 3 most common colors
-  - Fine mode: Shows 10 most common colors for precise selection
-  - Rich-formatted color table with live preview
-- **Beautiful CLI**: Rich library integration with colored panels and progress bars
-- **PDF Support**: Works with multi-page PDF documents
-- **Full Document Processing**: Processes all pages by default
-- **Advanced Progress Visualization**: Real-time progress bars with time remaining
-- **Flexible Parameters**: Adjust kernel size, inpaint radius, DPI, and more
-- **Batch Processing**: Process multiple files efficiently
+- **Intelligent Color Detection**: Automatically classifies colors as BACKGROUND, WATERMARK, TEXT, or NOISE
+  - Multi-pass analysis with confidence scoring
+  - Interactive visual color picker with preview
+  - Smart background protection to avoid false positives
+  
+- **Advanced Watermark Detection**:
+  - Adaptive Gaussian thresholding for better precision than traditional Otsu
+  - Combined color and saturation analysis
+  - Automatic background (white area) exclusion
+  - Morphological operations for noise removal
+  
+- **Precision Inpainting**:
+  - OpenCV TELEA algorithm with dynamic radius adjustment
+  - Coverage-based parameter optimization
+  - Progressive multi-pass removal for stubborn watermarks
+  - Accurate color space handling (RGB ↔ BGR conversion)
+
+- **Production Quality CLI**:
+  - Beautiful Rich-formatted panels and progress bars
+  - Internationalization support (English & Chinese)
+  - Detailed logging and statistics
+  - Robust error handling
+
+- **Flexible Processing**:
+  - Batch process multiple pages
+  - Select specific pages or ranges
+  - Adjustable DPI for different quality needs
+  - Per-page statistics and coverage reporting
 
 ## Installation
 
@@ -127,17 +143,39 @@ OPTIONS:
 
 ## Algorithm Details
 
-### Otsu阈值分割 (Otsu Threshold Segmentation)
-The tool automatically detects optimal threshold using Otsu's method:
-- No manual parameter tuning needed
-- Separates foreground (watermark) from background (document)
-- Works well with text and graphic watermarks
+### 1. Intelligent Color Classification
+The tool uses multi-dimensional analysis to classify colors:
+- **BACKGROUND**: Gray level 240-255 + coverage >60% → confidence 0%
+- **WATERMARK**: Gray level 180-240 + coverage 2-15% → dynamic confidence (20-100%)
+- **TEXT**: Gray level 0-80 + coverage <5% → confidence 0%
+- **NOISE**: All other patterns → confidence 0%
 
-### OpenCV修复 (OpenCV Inpainting)
-Uses TELEA algorithm for content-aware fill:
-- Telea method: Fast, good for document cleanup
-- Intelligent interpolation from surrounding pixels
-- Preserves document structure and text
+Confidence scoring formula:
+```
+confidence = (gray_factor × 0.5 + coverage_factor × 0.5) × 100
+           + bonus_for_typical_range
+```
+
+### 2. Adaptive Watermark Detection
+Combines multiple detection methods:
+- **Adaptive Gaussian Thresholding**: Handles varying lighting conditions
+- **Color-based Detection**: Uses detected watermark color to refine mask
+- **Saturation Analysis**: Identifies low-saturation regions (watermarks, text)
+- **Background Protection**: Explicitly excludes white/bright areas (>250 gray)
+- **Morphological Refinement**: Opens (removes small noise) then closes (fills holes)
+
+### 3. TELEA Inpainting
+Uses OpenCV's Fast Marching Method:
+- **Dynamic Radius**: Adjusted based on watermark coverage (radius = 2 + coverage×5)
+- **Color Space Accuracy**: Converts RGB→BGR for processing, maintains accuracy
+- **Early Termination**: Skips processing if no watermark detected
+- **Multi-pass Support**: Progressive mask expansion for difficult watermarks
+
+### 4. PDF Reconstruction
+Preserves document fidelity:
+- Maintains original page layout
+- Preserves resolution based on input DPI
+- Reconstructs from processed image sequence
 
 ## Requirements
 
@@ -276,8 +314,44 @@ Factors affecting speed:
 
 MIT
 
+## Changelog
+
+### v0.1.0 (2024)
+**Initial Release - Production Ready**
+
+**Core Features:**
+- ✅ Multi-stage watermark detection (adaptive thresholding + color analysis)
+- ✅ Intelligent color classification (BACKGROUND/WATERMARK/TEXT/NOISE)
+- ✅ OpenCV TELEA inpainting with dynamic parameters
+- ✅ Interactive color selection with confidence scoring
+- ✅ Multi-pass progressive watermark removal
+- ✅ Support for batch processing and page ranges
+
+**Algorithm Improvements:**
+- ✅ Adaptive Gaussian thresholding (replaces simple Otsu)
+- ✅ Background protection (excludes white/bright areas)
+- ✅ Color space accuracy (RGB ↔ BGR proper handling)
+- ✅ Dynamic inpaint radius based on coverage
+- ✅ Morphological noise removal with connected components
+
+**Quality Assurance:**
+- ✅ ruff linting compliance
+- ✅ Comprehensive error handling
+- ✅ Detailed logging and statistics
+- ✅ Verified on multiple PDF types
+
+## Contributing
+
+Contributions welcome! Areas for enhancement:
+- GPU acceleration for large documents
+- Additional inpainting algorithms (e.g., Criminisi)
+- Batch API interface
+- Additional language support
+- Performance benchmarking
+
 ## See Also
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Technical architecture details
 - [INSTALL.md](INSTALL.md) - Installation and development guide
-- [UV_TOOL_GUIDE.md](UV_TOOL_GUIDE.md) - UV tool configuration details
+- [UV_TOOL_GUIDE.md](UV_TOOL_GUIDE.md) - UV tool configuration
+- [ALGORITHM_FIX.md](ALGORITHM_FIX.md) - Detailed algorithm improvements
