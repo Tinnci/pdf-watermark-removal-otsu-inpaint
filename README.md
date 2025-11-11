@@ -9,9 +9,11 @@ A command-line UV tool to remove watermarks from PDF files using Otsu threshold 
 - **Interactive Color Detection**: Visual color picker to select watermark color from the document
   - Coarse mode: Shows 3 most common colors
   - Fine mode: Shows 10 most common colors for precise selection
+  - Rich-formatted color table with live preview
+- **Beautiful CLI**: Rich library integration with colored panels and progress bars
 - **PDF Support**: Works with multi-page PDF documents
 - **Full Document Processing**: Processes all pages by default
-- **Progress Visualization**: Real-time progress bars for each operation
+- **Advanced Progress Visualization**: Real-time progress bars with time remaining
 - **Flexible Parameters**: Adjust kernel size, inpaint radius, DPI, and more
 - **Batch Processing**: Process multiple files efficiently
 
@@ -143,23 +145,27 @@ Uses TELEA algorithm for content-aware fill:
 - uv package manager (for tool installation)
 
 ### Automatic Dependencies
-- OpenCV (opencv-python)
-- NumPy
-- Pillow
-- PyPDF
-- Click
-- PyMuPDF
+- OpenCV (opencv-python) - Image processing and inpainting
+- NumPy - Array operations
+- Pillow - Image I/O and PDF generation
+- PyPDF - PDF utilities
+- Click - CLI framework
+- PyMuPDF - Fast PDF rendering
+- Rich - Beautiful CLI with colors and progress bars
 
 ## Examples
 
-### Example 1: Interactive Color Selection
+## Example 1: Interactive Color Selection with Rich UI
 ```bash
 $ pdf-watermark-removal contract.pdf contract_clean.pdf
 
-Loading first page  [##################################] 100%
+┌─────────────────────────────── Configuration ──────────────────────────────┐
+│ PDF Watermark Removal Tool                                                │
+│ Input:  contract.pdf                                                      │
+│ Output: contract_clean.pdf                                                │
+└────────────────────────────────────────────────────────────────────────────┘
 
-Would you like to interactively select the watermark color?
-[y/N]: y
+Would you like to interactively select the watermark color? [y/N]: y
 Use coarse color selection (3 main colors)? [Y/n]: y
 
 ============================================================
@@ -170,18 +176,40 @@ Analyzing 3 most common colors in the document...
 
 Detected colors (likely watermark or text):
 
-Color bars:
-  0: ██████████████████████       RGB(200, 200, 200) (200)  45.3%
-  1: ████████████████             RGB(150, 150, 150) (150)  28.1%
-  2: ██████████                   RGB(100, 100, 100) (100)  18.2%
+┌─────┬──────────────────────────┬──────────────────┬────────────┬──────────┐
+│ Index │ Color Preview          │ RGB Value        │ Gray Level │ Percentage │
+├─────┼──────────────────────────┼──────────────────┼────────────┼──────────┤
+│ 0   │ ████████████████████░░░░ │ RGB(200, 200, 200) │ 200        │ 45.3%   │
+│ 1   │ ███████████░░░░░░░░░░░░░ │ RGB(150, 150, 150) │ 150        │ 28.1%   │
+│ 2   │ ████████░░░░░░░░░░░░░░░░ │ RGB(100, 100, 100) │ 100        │ 18.2%   │
+└─────┴──────────────────────────┴──────────────────┴────────────┴──────────┘
 
 Select color number (0-indexed) or 'a' for automatic [a]: 0
 
-✓ Selected color: RGB(200, 200, 200)
-  Percentage in document: 45.3%
-...
-✓ Watermark removal completed successfully!
-Output saved to: contract_clean.pdf
+┌───────────────────── Selected Watermark Color ─────────────────┐
+│                                                                 │
+│                                                                 │
+│ RGB Value: (200, 200, 200)                                     │
+│ Gray Level: 200                                                │
+│ Percentage in document: 45.30%                                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: Converting PDF to images...
+⠋ Loading PDF ────────────────────────────────── 0%
+Loaded 34 pages
+
+Step 2: Removing watermarks...
+Processing pages ████████████████████░░░░░░░░░░ 66% - 0:00:45
+Watermark removal completed
+
+Step 3: Converting images back to PDF...
+⠙ Saving PDF
+
+┌──────────────────────────── Success ──────────────────────────┐
+│ Watermark removal completed successfully!                    │
+│ Output saved to: contract_clean.pdf                          │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Example 2: Explicit Color and Multi-Pass
