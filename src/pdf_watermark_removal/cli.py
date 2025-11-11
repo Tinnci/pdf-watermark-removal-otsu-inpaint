@@ -196,7 +196,7 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
             processor.images_to_pdf(processed_images, output_pdf)
             bar.update(1)
 
-        click.echo(f"\n✓ Watermark removal completed successfully!")
+        click.echo(f"\nWatermark removal completed successfully!")
         click.echo(f"Output saved to: {output_pdf}")
 
     except FileNotFoundError as e:
