@@ -27,6 +27,8 @@ class ProcessingStats:
         self.watermark_coverage = 0.0
         self.output_file = None
         self.output_size_mb = 0.0
+        self.page_width = 2000  # Default A4 at 150 DPI: ~1654px
+        self.page_height = 2825  # Default A4 at 150 DPI: ~2339px
 
     def set_watermark_color(self, color_rgb, coverage=0.0):
         """Set detected watermark color.
@@ -52,6 +54,16 @@ class ProcessingStats:
         self.output_file = output_file
         self.output_size_mb = file_size_mb
 
+    def set_page_size(self, width, height):
+        """Set page dimensions for accurate pixel calculations.
+
+        Args:
+            width: Page width in pixels
+            height: Page height in pixels
+        """
+        self.page_width = width
+        self.page_height = height
+
     def get_elapsed_time(self):
         """Get formatted elapsed time.
 
@@ -74,8 +86,9 @@ class ProcessingStats:
 
             i18n_t = default_t
 
-        # Calculate pixels removed (rough estimate)
-        pixels_removed = int(self.watermark_coverage * 8000000)
+        # Calculate pixels removed (based on actual page size)
+        total_pixels = self.page_width * self.page_height * self.pages_processed
+        pixels_removed = int(self.watermark_coverage / 100 * total_pixels)
 
         # Create summary table
         table = Table(show_header=False, padding=(0, 1))

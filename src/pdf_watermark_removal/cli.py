@@ -223,6 +223,11 @@ def main(
         )
         console.print(f"[green]Loaded {page_info} pages[/green]\n")
 
+        # Set page dimensions for accurate statistics
+        if images:
+            page_height, page_width = images[0].shape[:2]
+            stats.set_page_size(page_width, page_height)
+
         if verbose:
             if pages_list:
                 console.print(

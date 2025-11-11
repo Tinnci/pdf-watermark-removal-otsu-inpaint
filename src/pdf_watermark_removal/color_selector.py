@@ -141,7 +141,6 @@ class ColorSelector:
         for color in alternatives:
             rgb = color["rgb"]
             coverage = color["coverage"]
-            percentage = color["percentage"]
 
             # Safely convert to int
             try:
@@ -152,7 +151,7 @@ class ColorSelector:
                 r, g, b = 128, 128, 128
 
             table.add_row(
-                f"RGB({r},{g},{b})", f"{coverage:.1f}%", f"{percentage:.1f}% of text"
+                f"RGB({r},{g},{b})", f"{coverage:.1f}%", f"{coverage:.1f}% coverage"
             )
 
         self.console.print(table)

@@ -83,6 +83,8 @@ class WatermarkDetector:
             print("Converting image to grayscale...")
 
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+        s_channel = hsv[:, :, 1]
 
         if self.verbose:
             print("Applying adaptive thresholding for better watermark detection...")
@@ -125,19 +127,14 @@ class WatermarkDetector:
 
             # Combine both masks
             mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
-        else:
-            # Fallback: use saturation-based detection
-            hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
-            s_channel = hsv[:, :, 1]
 
-            # Low saturation regions (text, watermarks)
-            # Use adaptive saturation threshold based on image statistics
-            saturation_mean = np.mean(s_channel)
-            saturation_threshold = max(30, int(saturation_mean * 0.6))
-            color_mask = s_channel < saturation_threshold
+        # Always apply adaptive saturation threshold for additional refinement
+        saturation_mean = np.mean(s_channel)
+        saturation_threshold = max(30, int(saturation_mean * 0.6))
+        color_mask = s_channel < saturation_threshold
 
-            # Combine thresholding and color detection
-            mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
+        # Combine thresholding and color detection
+        mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
 
         if self.verbose:
             detected_pixels = np.count_nonzero(mask)
