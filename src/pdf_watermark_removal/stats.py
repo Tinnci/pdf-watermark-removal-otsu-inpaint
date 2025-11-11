@@ -2,8 +2,10 @@
 
 import time
 from datetime import timedelta
+
 from rich.console import Console
 from rich.panel import Panel
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 
@@ -167,8 +169,8 @@ class ColorPreview:
         block_char = "█" * width
 
         try:
-            # Try to use RGB color directly
-            return Text(block_char, style=f"on {hex_color}")
+            # Use Style with bgcolor for consistent rendering
+            return Text(block_char, style=Style(bgcolor=hex_color, color="black"))
         except Exception:
             # Fallback to simpler styling
             return Text(block_char, style="on white")

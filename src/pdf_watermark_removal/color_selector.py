@@ -4,6 +4,9 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
+from rich.style import Style
+
 from .color_analyzer import ColorAnalyzer
 from .stats import ColorPreview
 from .i18n import t
@@ -75,6 +78,14 @@ class ColorSelector:
             "green" if confidence >= 85 else "yellow" if confidence >= 70 else "red"
         )
 
+        # Check if this is a text color (dark, low coverage)
+        color_type_warning = ""
+        if gray < 100 and recommended.get("coverage", 0) < 5:
+            color_type_warning = (
+                "\n[yellow]⚠️  Warning: This appears to be text color, "
+                "not a watermark[/yellow]"
+            )
+
         # Format recommendation panel with real color preview
         panel_content = f"""
 [bold cyan]{t("recommended_color")}:[/bold cyan]
@@ -83,7 +94,7 @@ class ColorSelector:
 [bold]{t("gray_level")}:[/bold] {gray}
 [bold]{t("coverage")}:[/bold] {coverage:.1f}%
 
-[bold]{t("confidence")}:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%
+[bold]{t("confidence")}:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%{color_type_warning}
 
 {ColorPreview.create_comparison(rgb)}
 """
@@ -201,16 +212,12 @@ class ColorSelector:
             except (TypeError, ValueError, IndexError):
                 r, g, b = 128, 128, 128
 
-            # Create colored block
+            # Create colored block with visible characters
             hex_color = f"#{r:02x}{g:02x}{b:02x}"
             try:
-                from rich.text import Text
-
-                block = Text("  " * 10 + "  ", style=f"on {hex_color}")
+                block = Text("█" * 15, style=Style(bgcolor=hex_color, color="black"))
             except Exception:
-                from rich.text import Text
-
-                block = Text("█" * 20)
+                block = Text("█" * 15)
 
             table.add_row(str(i), block, f"RGB({r},{g},{b})", f"{coverage:.1f}%")
 

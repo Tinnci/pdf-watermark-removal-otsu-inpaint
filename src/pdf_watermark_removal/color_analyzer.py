@@ -34,12 +34,21 @@ class ColorAnalyzer:
         total_pixels = gray.shape[0] * gray.shape[1]
 
         colors_info = []
-        for i, idx in enumerate(sorted_idx[:5]):
+        for i, idx in enumerate(sorted_idx[:10]):
             gray_val = unique_grays[idx]
             count = counts[idx]
             coverage = (count / total_pixels) * 100
 
             rgb_color = (gray_val, gray_val, gray_val)
+
+            # Classify color type
+            color_type = "background"
+            if gray_val < 100 and coverage < 5:
+                color_type = "text"
+            elif 150 <= gray_val <= 250 and 2 <= coverage <= 15:
+                color_type = "watermark"
+            elif gray_val > 240 and coverage > 80:
+                color_type = "background"
 
             colors_info.append(
                 {
@@ -49,22 +58,32 @@ class ColorAnalyzer:
                     "gray": gray_val,
                     "count": count,
                     "coverage": coverage,
+                    "color_type": color_type,
                 }
             )
 
         if colors_info:
-            coverage = colors_info[0]["coverage"]
-            if coverage > 40:
-                confidence = 95
-            elif coverage > 30:
-                confidence = 85
-            elif coverage > 20:
-                confidence = 75
+            # Prioritize watermark-type colors
+            watermark_colors = [
+                c for c in colors_info if c["color_type"] == "watermark"
+            ]
+            if watermark_colors:
+                recommended = watermark_colors[0]
+                recommended["confidence"] = 90
+                recommended["is_recommended"] = True
             else:
-                confidence = 65
-
-            colors_info[0]["confidence"] = confidence
-            colors_info[0]["is_recommended"] = True
+                recommended = colors_info[0]
+                coverage = recommended["coverage"]
+                if coverage > 40:
+                    confidence = 95
+                elif coverage > 30:
+                    confidence = 85
+                elif coverage > 20:
+                    confidence = 75
+                else:
+                    confidence = 65
+                recommended["confidence"] = confidence
+                recommended["is_recommended"] = True
 
         return colors_info
 

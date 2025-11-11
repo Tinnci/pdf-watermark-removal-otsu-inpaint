@@ -43,12 +43,24 @@ class WatermarkDetector:
         unique_grays, counts = np.unique(gray, return_counts=True)
         sorted_idx = np.argsort(counts)[::-1]
 
-        for idx in sorted_idx[:5]:
+        total_pixels = gray.shape[0] * gray.shape[1]
+
+        for idx in sorted_idx[:10]:
             gray_val = unique_grays[idx]
-            if 50 <= gray_val <= 220:
+            count = counts[idx]
+            coverage = (count / total_pixels) * 100
+
+            # Watermark characteristics:
+            # - Gray level: 150-250 (mid to light gray)
+            # - Coverage: 2-15% (significant but not dominant)
+            # - Excludes text (0-50, <5%) and background (>80%)
+            if 150 <= gray_val <= 250 and 2 <= coverage <= 15:
                 bgr_color = (gray_val, gray_val, gray_val)
                 if self.verbose:
-                    print(f"Detected watermark color (BGR): {bgr_color}")
+                    print(
+                        f"Detected watermark color (BGR): {bgr_color}, "
+                        f"coverage: {coverage:.1f}%"
+                    )
                 self.watermark_color = bgr_color
                 return bgr_color
 
