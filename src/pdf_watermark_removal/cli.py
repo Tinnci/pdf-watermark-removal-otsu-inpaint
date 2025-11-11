@@ -161,10 +161,10 @@ def parse_color(color_str):
     help="Display strength parameters in progress feedback",
 )
 @click.option(
-    "--auto-classify",
+    "--no-auto-classify",
     is_flag=True,
     default=False,
-    help="Auto-detect document type and optimize parameters",
+    help="Disable automatic document type detection",
 )
 @click.option(
     "--lang",
@@ -194,7 +194,7 @@ def main(
     debug_mask,
     skip_errors,
     show_strength,
-    auto_classify,
+    no_auto_classify,
     lang,
     verbose,
 ):
@@ -290,60 +290,47 @@ def main(
         )
         console.print(f"[green]Loaded {page_info} pages[/green]\n")
 
-        # Auto-classify document type and optimize parameters
+        # Auto-classify document type and optimize parameters (enabled by default)
+        auto_classify = not no_auto_classify  # Invert the flag
+        classification = None
+
         if auto_classify and images:
-            console.print(
-                "[bold]Step 1.5:[/bold] [yellow]Analyzing document type...[/yellow]"
-            )
             classifier = DocumentClassifier(verbose=verbose)
             classification = classifier.classify(images[0])
-
-            # Get optimized parameters
             auto_params = get_optimal_parameters(classification.doc_type)
 
-            # Display classification results
-            metrics_str = "\n".join(
-                [
-                    f"  • {key.replace('_', ' ').title()}: {val:.1f}"
-                    for key, val in classification.metrics.items()
-                ]
+            # Compact one-line summary for visibility without blocking flow
+            console.print(
+                f"[dim]📊 Document analysis: {classification.doc_type.value.upper()} "
+                f"({classification.confidence:.0f}% confidence) "
+                f"→ Auto-optimized[/dim]"
             )
 
-            console.print(
-                Panel(
-                    f"[bold cyan]Document Type:[/bold cyan] [green]{classification.doc_type.value.upper()}[/green]\n"
-                    f"[bold cyan]Confidence:[/bold cyan] [green]{classification.confidence:.1f}%[/green]\n\n"
-                    f"[bold]Analysis Metrics:[/bold]\n{metrics_str}\n\n"
-                    f"[bold]Auto-Optimized Parameters:[/bold]\n"
-                    f"  • Color tolerance: [green]{auto_params['color_tolerance']}[/green]\n"
-                    f"  • Inpaint strength: [green]{auto_params['inpaint_strength']}[/green]\n"
-                    f"  • Kernel size: [green]{auto_params['kernel_size']}[/green]\n"
-                    f"  • Multi-pass: [green]{auto_params['multi_pass']}[/green]\n"
-                    f"  • DPI: [green]{auto_params['dpi']}[/green]",
-                    title="[bold]Smart Parameter Optimization[/bold]",
-                    border_style="cyan",
-                )
-            )
+            # Apply auto parameters only if user didn't override (check default values)
+            applied_params = []
 
-            # Apply auto parameters (user params take precedence)
-            color_tolerance = (
-                color_tolerance
-                if color_tolerance != 30
-                else auto_params["color_tolerance"]
-            )
-            inpaint_strength = (
-                inpaint_strength
-                if inpaint_strength != 1.0
-                else auto_params["inpaint_strength"]
-            )
-            kernel_size = (
-                kernel_size if kernel_size != 3 else auto_params["kernel_size"]
-            )
-            multi_pass = multi_pass if multi_pass != 1 else auto_params["multi_pass"]
-            dpi = dpi if dpi != 150 else auto_params["dpi"]
-            console.print(
-                "[green]✓ Parameters optimized based on document type[/green]\n"
-            )
+            if color_tolerance == 30:  # Default value
+                color_tolerance = auto_params["color_tolerance"]
+                applied_params.append(f"color_tolerance={color_tolerance}")
+
+            if inpaint_strength == 1.0:  # Default value
+                inpaint_strength = auto_params["inpaint_strength"]
+                applied_params.append(f"inpaint_strength={inpaint_strength}")
+
+            if kernel_size == 3:  # Default value
+                kernel_size = auto_params["kernel_size"]
+                applied_params.append(f"kernel_size={kernel_size}")
+
+            if multi_pass == 1:  # Default value
+                multi_pass = auto_params["multi_pass"]
+                applied_params.append(f"multi_pass={multi_pass}")
+
+            if dpi == 150:  # Default value
+                dpi = auto_params["dpi"]
+                applied_params.append(f"dpi={dpi}")
+
+            if applied_params and verbose:
+                console.print(f"[dim]   └─ Applied: {', '.join(applied_params)}[/dim]")
 
         # Debug mode: preview first page detection
         if debug_mask and images:
