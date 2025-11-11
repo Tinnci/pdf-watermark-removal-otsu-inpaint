@@ -1,11 +1,11 @@
-"""Watermark detection using Otsu threshold segmentation and color analysis."""
+"""Watermark detection using multiple methods: traditional CV or YOLOv8."""
 
 import cv2
 import numpy as np
 
 
 class WatermarkDetector:
-    """Detects watermarks using Otsu threshold segmentation and color analysis."""
+    """Detects watermarks using traditional CV or YOLOv8 segmentation."""
 
     def __init__(
         self,
@@ -15,6 +15,10 @@ class WatermarkDetector:
         watermark_color=None,
         protect_text=True,
         color_tolerance=30,
+        detection_method="traditional",
+        yolo_model_path="yolov8n-seg.pt",
+        yolo_conf_thres=0.25,
+        yolo_device="auto",
     ):
         """Initialize the watermark detector.
 
@@ -25,9 +29,57 @@ class WatermarkDetector:
             watermark_color: Watermark color (R, G, B) or None
             protect_text: Protect dark text from being removed
             color_tolerance: Color matching tolerance (0-255, default 30)
+            detection_method: 'traditional' or 'yolo'
+            yolo_model_path: Path to YOLOv8 model
+            yolo_conf_thres: YOLOv8 confidence threshold
+            yolo_device: YOLOv8 device ('cpu', 'cuda', 'auto')
         """
-        self.kernel_size = kernel_size
+        self.method = detection_method
         self.verbose = verbose
+
+        if detection_method == "yolo":
+            try:
+                from .yolo_detector import YOLOv8WatermarkDetector
+
+                self.detector = YOLOv8WatermarkDetector(
+                    model_path=yolo_model_path,
+                    conf_thres=yolo_conf_thres,
+                    device=yolo_device,
+                    verbose=verbose,
+                )
+            except ImportError:
+                if verbose:
+                    print(
+                        "[WatermarkDetector] YOLOv8 not available, "
+                        "falling back to traditional method"
+                    )
+                self.method = "traditional"
+                self._init_traditional(
+                    kernel_size,
+                    auto_detect_color,
+                    watermark_color,
+                    protect_text,
+                    color_tolerance,
+                )
+        else:
+            self._init_traditional(
+                kernel_size,
+                auto_detect_color,
+                watermark_color,
+                protect_text,
+                color_tolerance,
+            )
+
+    def _init_traditional(
+        self,
+        kernel_size,
+        auto_detect_color,
+        watermark_color,
+        protect_text,
+        color_tolerance,
+    ):
+        """Initialize traditional detection parameters."""
+        self.kernel_size = kernel_size
         self.auto_detect_color = auto_detect_color
         self.watermark_color = watermark_color
         self.protect_text = protect_text
@@ -92,7 +144,21 @@ class WatermarkDetector:
         return text_protect
 
     def detect_watermark_mask(self, image_rgb):
-        """Detect watermark regions using Otsu thresholding and color analysis.
+        """Detect watermark regions using selected method.
+
+        Args:
+            image_rgb: Input image in RGB format
+
+        Returns:
+            Binary mask of detected watermark regions
+        """
+        if self.method == "yolo":
+            return self.detector.detect_watermark_mask(image_rgb)
+        else:
+            return self._traditional_detect_mask(image_rgb)
+
+    def _traditional_detect_mask(self, image_rgb):
+        """Traditional watermark detection using Otsu thresholding and color analysis.
 
         Args:
             image_rgb: Input image in RGB format
@@ -197,6 +263,13 @@ class WatermarkDetector:
         Returns:
             Refined mask
         """
+        if self.method == "yolo":
+            # YOLOv8 already provides good masks, light refinement only
+            return self.detector.refine_mask(mask, kernel_size=self.kernel_size)
+        else:
+            return self._traditional_refine_mask(mask, min_area, max_area)
+
+    def _traditional_refine_mask(self, mask, min_area=100, max_area=5000):
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
 
         refined = np.zeros_like(mask)
