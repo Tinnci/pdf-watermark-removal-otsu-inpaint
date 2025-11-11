@@ -19,6 +19,7 @@ jobs:
       url: https://pypi.org/project/pdf-watermark-removal-otsu-inpaint
     permissions:
       id-token: write
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +45,21 @@ jobs:
           password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (from tag)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
           files: dist/*
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release (manual trigger)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          generate_release_notes: true
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
