@@ -14,6 +14,7 @@ class WatermarkDetector:
         auto_detect_color=True,
         watermark_color=None,
         protect_text=True,
+        color_tolerance=30,
     ):
         """Initialize the watermark detector.
 
@@ -23,12 +24,14 @@ class WatermarkDetector:
             auto_detect_color: Automatically detect watermark color
             watermark_color: Watermark color (R, G, B) or None
             protect_text: Protect dark text from being removed
+            color_tolerance: Color matching tolerance (0-255, default 30)
         """
         self.kernel_size = kernel_size
         self.verbose = verbose
         self.auto_detect_color = auto_detect_color
         self.watermark_color = watermark_color
         self.protect_text = protect_text
+        self.color_tolerance = color_tolerance
 
     def detect_watermark_color(self, image_rgb):
         """Detect the dominant watermark color using color analysis.
@@ -54,10 +57,10 @@ class WatermarkDetector:
             coverage = (count / total_pixels) * 100
 
             # Watermark characteristics:
-            # - Gray level: 150-250 (mid to light gray)
-            # - Coverage: 2-15% (significant but not dominant)
+            # - Gray level: 100-250 (expanded from 150-250 for more sensitivity)
+            # - Coverage: 1-20% (expanded from 2-15 to catch more watermarks)
             # - Excludes text (0-50, <5%) and background (>80%)
-            if 150 <= gray_val <= 250 and 2 <= coverage <= 15:
+            if 100 <= gray_val <= 250 and 1 <= coverage <= 20:
                 bgr_color = (gray_val, gray_val, gray_val)
                 if self.verbose:
                     print(
@@ -144,7 +147,7 @@ class WatermarkDetector:
 
             # Create color-based mask: pixels close to watermark color
             color_diff = np.abs(gray.astype(int) - target_gray)
-            color_mask = color_diff < 30  # Tolerance of 30 gray levels
+            color_mask = color_diff < self.color_tolerance  # Dynamic tolerance
 
             # Combine both masks
             mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
@@ -170,7 +173,9 @@ class WatermarkDetector:
                 print("Protecting dark text regions from removal...")
             text_protect_mask = self.get_text_protect_mask(gray)
             # Only keep watermark pixels that are NOT in text regions
-            mask = cv2.bitwise_and(mask, text_protect_mask)
+            # text_protect_mask is 255 where text exists, 0 elsewhere
+            # We need to exclude (invert) the text regions from watermark mask
+            mask = cv2.bitwise_and(mask, cv2.bitwise_not(text_protect_mask))
 
         if self.verbose:
             detected_pixels = np.count_nonzero(mask)
@@ -208,3 +213,39 @@ class WatermarkDetector:
                 refined[labels == i] = 255
 
         return refined
+
+    def preview_detection(self, image_rgb, output_path=None):
+        """Generate debug preview showing watermark and text regions.
+
+        Args:
+            image_rgb: Input image in RGB format
+            output_path: Optional path to save preview image
+
+        Returns:
+            Preview image with color-coded regions
+        """
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        mask = self.detect_watermark_mask(image_rgb)
+        
+        # Create colored preview
+        preview = image_rgb.copy().astype(np.float32)
+        
+        # Red overlay for watermark regions (75% opacity)
+        watermark_regions = mask > 0
+        preview[watermark_regions] = preview[watermark_regions] * 0.25 + np.array([255, 0, 0]) * 0.75
+        
+        # Blue overlay for text protection regions (if enabled)
+        if self.protect_text:
+            text_mask = self.get_text_protect_mask(gray)
+            text_regions = text_mask > 0
+            preview[text_regions] = preview[text_regions] * 0.5 + np.array([0, 0, 255]) * 0.5
+        
+        preview = preview.astype(np.uint8)
+        
+        if output_path:
+            cv2.imwrite(output_path, cv2.cvtColor(preview, cv2.COLOR_RGB2BGR))
+            if self.verbose:
+                print(f"Debug preview saved to {output_path}")
+        
+        return preview
+

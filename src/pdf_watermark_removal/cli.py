@@ -135,6 +135,18 @@ def parse_color(color_str):
     help="Protect dark text from being removed",
 )
 @click.option(
+    "--color-tolerance",
+    default=30,
+    type=int,
+    help="Color matching tolerance (0-255, lower=stricter)",
+)
+@click.option(
+    "--debug-mask",
+    is_flag=True,
+    default=False,
+    help="Save debug preview of watermark detection",
+)
+@click.option(
     "--lang",
     default=None,
     type=str,
@@ -158,6 +170,8 @@ def main(
     color,
     auto_color,
     protect_text,
+    color_tolerance,
+    debug_mask,
     lang,
     verbose,
 ):
@@ -217,6 +231,7 @@ def main(
             auto_detect_color=watermark_color is None,
             watermark_color=watermark_color,
             protect_text=protect_text,
+            color_tolerance=color_tolerance,
         )
 
         # Convert all pages
@@ -238,6 +253,14 @@ def main(
             f"all {len(images)}" if not pages_list else f"{len(pages_list)} specified"
         )
         console.print(f"[green]Loaded {page_info} pages[/green]\n")
+
+        # Debug mode: preview first page detection
+        if debug_mask and images:
+            console.print("[bold yellow]Debug Mode: Generating detection preview...[/bold yellow]")
+            preview = remover.detector.preview_detection(
+                images[0], output_path="debug_watermark_mask.png"
+            )
+            console.print("[green]✓ Saved debug preview to: debug_watermark_mask.png[/green]\n")
 
         # Set page dimensions for accurate statistics
         if images:

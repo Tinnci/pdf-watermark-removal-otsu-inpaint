@@ -17,6 +17,7 @@ class WatermarkRemover:
         auto_detect_color=True,
         watermark_color=None,
         protect_text=True,
+        color_tolerance=30,
     ):
         """Initialize the watermark remover.
 
@@ -28,6 +29,7 @@ class WatermarkRemover:
             auto_detect_color: Automatically detect watermark color
             watermark_color: Watermark color (R, G, B) or None
             protect_text: Protect dark text from being removed
+            color_tolerance: Color matching tolerance (0-255, default 30)
         """
         self.detector = WatermarkDetector(
             kernel_size=kernel_size,
@@ -35,6 +37,7 @@ class WatermarkRemover:
             auto_detect_color=auto_detect_color,
             watermark_color=watermark_color,
             protect_text=protect_text,
+            color_tolerance=color_tolerance,
         )
         self.inpaint_radius = inpaint_radius
         self.inpaint_strength = inpaint_strength
