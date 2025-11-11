@@ -83,11 +83,12 @@ class WatermarkDetector:
         """
         # Identify dark regions (typically text) with gray level 0-80
         _, text_protect = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
-        
+
         # Remove small noise from text protection mask
         kernel_protect = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        text_protect = cv2.morphologyEx(text_protect, cv2.MORPH_OPEN, 
-                                       kernel_protect, iterations=1)
+        text_protect = cv2.morphologyEx(
+            text_protect, cv2.MORPH_OPEN, kernel_protect, iterations=1
+        )
         return text_protect
 
     def detect_watermark_mask(self, image_rgb):
@@ -203,10 +204,10 @@ class WatermarkDetector:
             area = stats[i, cv2.CC_STAT_AREA]
             width = stats[i, cv2.CC_STAT_WIDTH]
             height = stats[i, cv2.CC_STAT_HEIGHT]
-            
+
             # Calculate aspect ratio to filter out text lines
             aspect_ratio = width / height if height > 0 else 0
-            
+
             # Keep components that are: within area range AND not thin/elongated (text-like)
             # Aspect ratio < 10 filters out thin text lines which tend to be very elongated
             if min_area <= area <= max_area and aspect_ratio < 10:
@@ -226,26 +227,29 @@ class WatermarkDetector:
         """
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
         mask = self.detect_watermark_mask(image_rgb)
-        
+
         # Create colored preview
         preview = image_rgb.copy().astype(np.float32)
-        
+
         # Red overlay for watermark regions (75% opacity)
         watermark_regions = mask > 0
-        preview[watermark_regions] = preview[watermark_regions] * 0.25 + np.array([255, 0, 0]) * 0.75
-        
+        preview[watermark_regions] = (
+            preview[watermark_regions] * 0.25 + np.array([255, 0, 0]) * 0.75
+        )
+
         # Blue overlay for text protection regions (if enabled)
         if self.protect_text:
             text_mask = self.get_text_protect_mask(gray)
             text_regions = text_mask > 0
-            preview[text_regions] = preview[text_regions] * 0.5 + np.array([0, 0, 255]) * 0.5
-        
+            preview[text_regions] = (
+                preview[text_regions] * 0.5 + np.array([0, 0, 255]) * 0.5
+            )
+
         preview = preview.astype(np.uint8)
-        
+
         if output_path:
             cv2.imwrite(output_path, cv2.cvtColor(preview, cv2.COLOR_RGB2BGR))
             if self.verbose:
                 print(f"Debug preview saved to {output_path}")
-        
-        return preview
 
+        return preview

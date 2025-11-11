@@ -29,6 +29,7 @@ class ProcessingStats:
         self.output_size_mb = 0.0
         self.page_width = 2000  # Default A4 at 150 DPI: ~1654px
         self.page_height = 2825  # Default A4 at 150 DPI: ~2339px
+        self.page_stats = []  # Track per-page statistics
 
     def set_watermark_color(self, color_rgb, coverage=0.0):
         """Set detected watermark color.
@@ -43,6 +44,22 @@ class ProcessingStats:
     def add_page(self):
         """Increment processed pages counter."""
         self.pages_processed += 1
+
+    def add_page_stat(self, page_num, watermark_coverage, status="success"):
+        """Add per-page statistics.
+
+        Args:
+            page_num: Page number (1-indexed)
+            watermark_coverage: Watermark coverage percentage (0-100)
+            status: Processing status ('success', 'partial', 'failed')
+        """
+        self.page_stats.append(
+            {
+                "page": page_num,
+                "coverage": watermark_coverage,
+                "status": status,
+            }
+        )
 
     def set_output(self, output_file, file_size_mb):
         """Set output file information.
@@ -74,7 +91,7 @@ class ProcessingStats:
         return str(timedelta(seconds=int(elapsed)))
 
     def display_summary(self, i18n_t=None):
-        """Display processing summary panel.
+        """Display processing summary panel with detailed statistics.
 
         Args:
             i18n_t: Translation function
@@ -90,9 +107,9 @@ class ProcessingStats:
         total_pixels = self.page_width * self.page_height * self.pages_processed
         pixels_removed = int(self.watermark_coverage / 100 * total_pixels)
 
-        # Create summary table
+        # Create main summary table
         table = Table(show_header=False, padding=(0, 1))
-        table.add_column("Label", style="cyan")
+        table.add_column("Label", style="cyan", width=25)
         table.add_column("Value", style="green")
 
         table.add_row(
@@ -123,7 +140,7 @@ class ProcessingStats:
                 f"{self.output_file} ({self.output_size_mb:.1f} MB)",
             )
 
-        # Display in panel
+        # Display main summary
         self.console.print(
             Panel(
                 table,
@@ -131,6 +148,60 @@ class ProcessingStats:
                 border_style="green",
             )
         )
+
+        # Display per-page statistics if available
+        if self.page_stats:
+            self._display_page_statistics()
+
+    def _display_page_statistics(self):
+        """Display detailed per-page statistics in a table."""
+        # Show summary of page statistics
+        page_table = Table(show_header=True, header_style="bold cyan", padding=(0, 1))
+        page_table.add_column("Page", style="cyan", width=6)
+        page_table.add_column("Coverage %", style="blue", width=12)
+        page_table.add_column("Status", style="yellow", width=10)
+
+        success_count = 0
+        partial_count = 0
+        failed_count = 0
+        skipped_count = 0
+
+        for stat in self.page_stats:
+            page_num = stat["page"]
+            coverage = stat["coverage"]
+            status = stat["status"]
+
+            # Count statuses
+            if status == "success":
+                success_count += 1
+                status_display = "[green]✓ Success[/green]"
+            elif status == "partial":
+                partial_count += 1
+                status_display = "[yellow]⚠ Partial[/yellow]"
+            elif status == "skipped":
+                skipped_count += 1
+                status_display = "[cyan]⊘ Skipped[/cyan]"
+            else:
+                failed_count += 1
+                status_display = "[red]✗ Failed[/red]"
+
+            page_table.add_row(f"{page_num}", f"{coverage:.1f}%", status_display)
+
+        # Display page stats if we have a reasonable number
+        if len(self.page_stats) <= 50:
+            self.console.print("\n[bold]Per-Page Statistics:[/bold]")
+            self.console.print(page_table)
+        else:
+            # For large PDFs, show summary only
+            self.console.print("\n[bold]Processing Summary by Status:[/bold]")
+            summary_table = Table(show_header=False, padding=(0, 1))
+            summary_table.add_column("", style="cyan")
+            summary_table.add_column("", style="green")
+            summary_table.add_row("[green]✓ Successful[/green]", str(success_count))
+            summary_table.add_row("[yellow]⚠ Partial[/yellow]", str(partial_count))
+            summary_table.add_row("[cyan]⊘ Skipped[/cyan]", str(skipped_count))
+            summary_table.add_row("[red]✗ Failed[/red]", str(failed_count))
+            self.console.print(summary_table)
 
 
 class ColorPreview:

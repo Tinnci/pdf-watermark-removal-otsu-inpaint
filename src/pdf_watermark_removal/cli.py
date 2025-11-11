@@ -3,6 +3,7 @@
 import sys
 import os
 
+import numpy as np
 import click
 from rich.console import Console
 from rich.panel import Panel
@@ -147,6 +148,18 @@ def parse_color(color_str):
     help="Save debug preview of watermark detection",
 )
 @click.option(
+    "--skip-errors",
+    is_flag=True,
+    default=False,
+    help="Skip pages with errors instead of failing",
+)
+@click.option(
+    "--show-strength",
+    is_flag=True,
+    default=False,
+    help="Display strength parameters in progress feedback",
+)
+@click.option(
     "--lang",
     default=None,
     type=str,
@@ -172,6 +185,8 @@ def main(
     protect_text,
     color_tolerance,
     debug_mask,
+    skip_errors,
+    show_strength,
     lang,
     verbose,
 ):
@@ -234,6 +249,19 @@ def main(
             color_tolerance=color_tolerance,
         )
 
+        # Display strength configuration if requested
+        if show_strength:
+            strength_info = remover.get_strength_info()
+            strength_table = Panel(
+                f"[cyan]Inpaint Strength:[/cyan] [green]{strength_info['strength']:.1f}[/green]\n"
+                f"[cyan]Blend Mode:[/cyan] [green]{strength_info['blend_mode']}[/green]\n"
+                f"[cyan]Base Radius:[/cyan] [green]{inpaint_radius}[/green]\n"
+                f"[dim]Note: Dynamic radius will be calculated per-page based on watermark coverage[/dim]",
+                title="[bold]Strength Configuration[/bold]",
+                border_style="cyan",
+            )
+            console.print(strength_table)
+
         # Convert all pages
         msg = "\n[bold]Step 1:[/bold] [yellow]Converting PDF to images...[/yellow]"
         console.print(msg)
@@ -256,11 +284,15 @@ def main(
 
         # Debug mode: preview first page detection
         if debug_mask and images:
-            console.print("[bold yellow]Debug Mode: Generating detection preview...[/bold yellow]")
-            preview = remover.detector.preview_detection(
+            console.print(
+                "[bold yellow]Debug Mode: Generating detection preview...[/bold yellow]"
+            )
+            remover.detector.preview_detection(
                 images[0], output_path="debug_watermark_mask.png"
             )
-            console.print("[green]✓ Saved debug preview to: debug_watermark_mask.png[/green]\n")
+            console.print(
+                "[green]✓ Saved debug preview to: debug_watermark_mask.png[/green]\n"
+            )
 
         # Set page dimensions for accurate statistics
         if images:
@@ -277,7 +309,7 @@ def main(
 
         console.print("[bold]Step 2:[/bold] [yellow]Removing watermarks...[/yellow]")
 
-        # Process images with progress bar
+        # Process images with detailed multi-level progress tracking
         processed_images = []
         with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -286,17 +318,71 @@ def main(
             TextColumn("-"),
             TimeRemainingColumn(),
         ) as progress:
-            task = progress.add_task("[cyan]Processing pages", total=len(images))
+            main_task = progress.add_task("[cyan]Overall Progress", total=len(images))
 
-            for i, img in enumerate(images):
-                if multi_pass > 1:
-                    processed = remover.remove_watermark_multi_pass(
-                        img, passes=multi_pass
+            for page_idx, img in enumerate(images):
+                page_num = page_idx + 1
+                page_task = progress.add_task(
+                    f"[yellow]Page {page_num}/{len(images)}", total=100
+                )
+
+                try:
+                    # Watermark detection and removal
+                    progress.update(
+                        page_task, description=f"[yellow]Page {page_num}: Processing..."
                     )
-                else:
-                    processed = remover.remove_watermark(img)
-                processed_images.append(processed)
-                progress.update(task, advance=1)
+                    progress.update(page_task, completed=0)
+
+                    if multi_pass > 1:
+                        processed = remover.remove_watermark_multi_pass(
+                            img, passes=multi_pass
+                        )
+                    else:
+                        processed = remover.remove_watermark(img)
+
+                    progress.update(page_task, completed=100)
+
+                    # Build completion message with optional strength details
+                    status_msg = f"[green]✓ Page {page_num}"
+                    if show_strength:
+                        stats_info = remover.last_stats
+                        status_msg += (
+                            f" [dim]| cov:{stats_info['coverage']:.1f}% "
+                            f"| str:{stats_info['strength']:.1f} "
+                            f"| rad:{stats_info['dynamic_radius']}[/dim]"
+                        )
+                    status_msg += "[/green]"
+
+                    progress.update(page_task, description=status_msg)
+                    processed_images.append(processed)
+
+                    # Record page statistics
+                    mask = remover.detector.detect_watermark_mask(img)
+                    coverage = (
+                        np.count_nonzero(mask) / (mask.shape[0] * mask.shape[1]) * 100
+                    )
+                    stats.add_page_stat(page_num, coverage, status="success")
+
+                except Exception as e:
+                    error_msg = f"[red]Page {page_num}: {str(e)[:50]}[/red]"
+                    progress.update(page_task, description=error_msg)
+
+                    if skip_errors:
+                        console.print(
+                            f"[yellow]⚠ Skipped page {page_num}: {str(e)[:80]}[/yellow]"
+                        )
+                        processed_images.append(img)  # Keep original
+                        stats.add_page_stat(page_num, 0.0, status="skipped")
+                    else:
+                        if verbose:
+                            console.print(
+                                f"[red]Error processing page {page_num}: {e}[/red]"
+                            )
+                        raise
+
+                finally:
+                    progress.update(main_task, advance=1)
+                    progress.remove_task(page_task)
 
         console.print("[green]Watermark removal completed[/green]\n")
 

@@ -42,6 +42,7 @@ class WatermarkRemover:
         self.inpaint_radius = inpaint_radius
         self.inpaint_strength = inpaint_strength
         self.verbose = verbose
+        self.last_stats = {}  # Track last removal statistics
 
     def apply_inpaint_strength(self, original, inpainted, mask, strength):
         """Apply inpaint strength by blending original and inpainted images.
@@ -56,13 +57,31 @@ class WatermarkRemover:
             Blended result
         """
         mask_normalized = mask.astype(np.float32) / 255.0
-        
+
         # Blend based on strength: result = original * (1 - strength * mask) + inpainted * strength * mask
         blend_factor = mask_normalized[:, :, np.newaxis] * strength
-        result = original.astype(np.float32) * (1 - blend_factor) + \
-                 inpainted.astype(np.float32) * blend_factor
-        
+        result = (
+            original.astype(np.float32) * (1 - blend_factor)
+            + inpainted.astype(np.float32) * blend_factor
+        )
+
         return result.astype(np.uint8)
+
+    def get_strength_info(self):
+        """Get current strength configuration and last statistics.
+
+        Returns:
+            dict with strength info
+        """
+        return {
+            "strength": self.inpaint_strength,
+            "radius": self.inpaint_radius,
+            "blend_mode": "100%"
+            if self.inpaint_strength >= 1.5
+            else f"{self.inpaint_strength * 100:.0f}%",
+            "last_coverage": self.last_stats.get("coverage", 0.0),
+            "last_radius": self.last_stats.get("dynamic_radius", 0),
+        }
 
     def remove_watermark(self, image_rgb):
         """Remove watermark from an image.
@@ -91,8 +110,16 @@ class WatermarkRemover:
         # Calculate dynamic inpaint radius based on watermark coverage and strength
         watermark_coverage = np.count_nonzero(mask) / (mask.shape[0] * mask.shape[1])
         dynamic_radius = max(
-            2, int(self.inpaint_radius + watermark_coverage * 10 * self.inpaint_strength)
+            2,
+            int(self.inpaint_radius + watermark_coverage * 10 * self.inpaint_strength),
         )
+
+        # Record statistics for later reference
+        self.last_stats = {
+            "coverage": watermark_coverage * 100,
+            "dynamic_radius": dynamic_radius,
+            "strength": self.inpaint_strength,
+        }
 
         if self.verbose:
             coverage_pct = watermark_coverage * 100
@@ -110,10 +137,12 @@ class WatermarkRemover:
 
         # Convert back to RGB
         restored = cv2.cvtColor(restored_bgr, cv2.COLOR_BGR2RGB)
-        
+
         # Apply strength blending if not at maximum
         if self.inpaint_strength < 1.5:
-            restored = self.apply_inpaint_strength(image_rgb, restored, mask, self.inpaint_strength)
+            restored = self.apply_inpaint_strength(
+                image_rgb, restored, mask, self.inpaint_strength
+            )
 
         return restored
 
@@ -156,7 +185,11 @@ class WatermarkRemover:
                 mask.shape[0] * mask.shape[1]
             )
             inpaint_radius = max(
-                2, int(self.inpaint_radius + watermark_coverage * 10 * self.inpaint_strength)
+                2,
+                int(
+                    self.inpaint_radius
+                    + watermark_coverage * 10 * self.inpaint_strength
+                ),
             )
 
             if self.verbose:
@@ -170,10 +203,12 @@ class WatermarkRemover:
             result_inpainted = cv2.inpaint(
                 result.astype(np.uint8), mask, inpaint_radius, cv2.INPAINT_TELEA
             )
-            
+
             # Apply strength blending
             if self.inpaint_strength < 1.5:
-                result = self.apply_inpaint_strength(result, result_inpainted, mask, self.inpaint_strength)
+                result = self.apply_inpaint_strength(
+                    result, result_inpainted, mask, self.inpaint_strength
+                )
             else:
                 result = result_inpainted
 
