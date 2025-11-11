@@ -52,7 +52,7 @@ def parse_pages(pages_str):
     "--pages",
     default=None,
     type=str,
-    help="Pages to process (e.g., '1,3,5' or '1-5')",
+    help="Pages to process (e.g., '1,3,5' or '1-5'). Process all pages if not specified.",
 )
 @click.option(
     "--multi-pass",
@@ -67,16 +67,24 @@ def parse_pages(pages_str):
     help="DPI for PDF to image conversion",
 )
 @click.option(
+    "--auto-color",
+    is_flag=True,
+    default=True,
+    help="Automatically detect watermark color",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
     help="Enable verbose output",
 )
-def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, dpi, verbose):
+def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, dpi, auto_color, verbose):
     """Remove watermarks from PDF using Otsu threshold and inpaint.
 
     INPUT_PDF: Path to input PDF file
     OUTPUT_PDF: Path to output PDF file
+    
+    By default, processes all pages. Use --pages to process specific pages.
     """
     try:
         if verbose:
@@ -87,6 +95,7 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
             click.echo(f"Inpaint radius: {inpaint_radius}")
             click.echo(f"Multi-pass: {multi_pass}")
             click.echo(f"DPI: {dpi}")
+            click.echo(f"Auto-detect color: {auto_color}")
             click.echo()
 
         pages_list = parse_pages(pages)
@@ -96,36 +105,35 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
             kernel_size=kernel_size,
             inpaint_radius=inpaint_radius,
             verbose=verbose,
+            auto_detect_color=auto_color,
         )
 
+        if verbose:
+            click.echo("Step 1: Converting PDF to images...")
+        images = processor.pdf_to_images(input_pdf, pages=pages_list)
+        
+        if verbose:
+            if pages_list:
+                click.echo(f"Processing {len(pages_list)} specified pages")
+            else:
+                click.echo(f"Processing all {len(images)} pages")
+            click.echo("Step 2: Removing watermarks...")
+
+        processed_images = []
         with click.progressbar(
-            length=100, label="Processing", show_pos=True
+            length=len(images), label="Removing watermarks", show_pos=True
         ) as bar:
-            bar.update(10)
-
-            if verbose:
-                click.echo("Step 1: Converting PDF to images...")
-            images = processor.pdf_to_images(input_pdf, pages=pages_list)
-            bar.update(30)
-
-            if verbose:
-                click.echo("Step 2: Removing watermarks...")
-            processed_images = []
             for i, img in enumerate(images):
-                if verbose:
-                    click.echo(f"  Processing image {i + 1}/{len(images)}...")
                 if multi_pass > 1:
                     processed = remover.remove_watermark_multi_pass(img, passes=multi_pass)
                 else:
                     processed = remover.remove_watermark(img)
                 processed_images.append(processed)
+                bar.update(1)
 
-            bar.update(50)
-
-            if verbose:
-                click.echo("Step 3: Converting images back to PDF...")
-            processor.images_to_pdf(processed_images, output_pdf)
-            bar.update(100)
+        if verbose:
+            click.echo("Step 3: Converting images back to PDF...")
+        processor.images_to_pdf(processed_images, output_pdf)
 
         click.echo(f"\n✓ Watermark removal completed successfully!")
         click.echo(f"Output saved to: {output_pdf}")
