@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pdf-watermark-removal-otsu-inpaint"
+version = "0.1.0"
+description = "Remove watermarks from PDF using Otsu threshold segmentation and OpenCV inpaint"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "opencv-python>=4.8.0",
+    "numpy>=1.21.0",
+    "pillow>=9.0.0",
+    "pypdf>=3.0.0",
+    "click>=8.0.0",
+    "PyMuPDF>=1.23.0",
+]
+
+[project.scripts]
+pdf-watermark-removal = "pdf_watermark_removal.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pdf_watermark_removal"]
