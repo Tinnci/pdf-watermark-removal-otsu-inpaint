@@ -10,10 +10,10 @@ from rich.text import Text
 
 class ProcessingStats:
     """Track and display processing statistics."""
-    
+
     def __init__(self, verbose=False):
         """Initialize statistics tracker.
-        
+
         Args:
             verbose: Enable verbose logging
         """
@@ -25,165 +25,178 @@ class ProcessingStats:
         self.watermark_coverage = 0.0
         self.output_file = None
         self.output_size_mb = 0.0
-    
+
     def set_watermark_color(self, color_rgb, coverage=0.0):
         """Set detected watermark color.
-        
+
         Args:
             color_rgb: Tuple (R, G, B)
             coverage: Coverage percentage of total pixels
         """
         self.watermark_color = color_rgb
         self.watermark_coverage = coverage
-    
+
     def add_page(self):
         """Increment processed pages counter."""
         self.pages_processed += 1
-    
+
     def set_output(self, output_file, file_size_mb):
         """Set output file information.
-        
+
         Args:
             output_file: Path to output PDF
             file_size_mb: File size in MB
         """
         self.output_file = output_file
         self.output_size_mb = file_size_mb
-    
+
     def get_elapsed_time(self):
         """Get formatted elapsed time.
-        
+
         Returns:
             str: Formatted time (HH:MM:SS)
         """
         elapsed = time.time() - self.start_time
         return str(timedelta(seconds=int(elapsed)))
-    
+
     def display_summary(self, i18n_t=None):
         """Display processing summary panel.
-        
+
         Args:
             i18n_t: Translation function
         """
         if i18n_t is None:
-            i18n_t = lambda x, **kw: x
-        
+
+            def default_t(key, **kw):
+                return key
+
+            i18n_t = default_t
+
         # Calculate pixels removed (rough estimate)
-        pixels_removed = int(self.watermark_coverage * 8000000)  # Typical page pixels
-        
+        pixels_removed = int(self.watermark_coverage * 8000000)
+
         # Create summary table
         table = Table(show_header=False, padding=(0, 1))
         table.add_column("Label", style="cyan")
         table.add_column("Value", style="green")
-        
+
         table.add_row(
-            f"[bold]{i18n_t('pages_processed')}:[/bold]",
-            f"{self.pages_processed}"
+            f"[bold]{i18n_t('pages_processed')}:[/bold]", f"{self.pages_processed}"
         )
-        
+
         if self.watermark_color:
             table.add_row(
                 f"[bold]{i18n_t('watermark_detection')}:[/bold]",
-                f"RGB{self.watermark_color}"
+                f"RGB{self.watermark_color}",
             )
-        
+
         table.add_row(
-            f"[bold]{i18n_t('coverage')}:[/bold]",
-            f"{self.watermark_coverage:.1f}%"
+            f"[bold]{i18n_t('coverage')}:[/bold]", f"{self.watermark_coverage:.1f}%"
         )
-        
+
         table.add_row(
-            f"[bold]{i18n_t('pixels_removed')}:[/bold]",
-            f"{pixels_removed:,}"
+            f"[bold]{i18n_t('pixels_removed')}:[/bold]", f"{pixels_removed:,}"
         )
-        
+
         table.add_row(
-            f"[bold]{i18n_t('time_elapsed')}:[/bold]",
-            self.get_elapsed_time()
+            f"[bold]{i18n_t('time_elapsed')}:[/bold]", self.get_elapsed_time()
         )
-        
+
         if self.output_file:
             table.add_row(
                 f"[bold]{i18n_t('output_saved')}:[/bold]",
-                f"{self.output_file} ({self.output_size_mb:.1f} MB)"
+                f"{self.output_file} ({self.output_size_mb:.1f} MB)",
             )
-        
+
         # Display in panel
-        self.console.print(Panel(
-            table,
-            title="[bold green]Processing Complete[/bold green]",
-            border_style="green"
-        ))
+        self.console.print(
+            Panel(
+                table,
+                title="[bold green]Processing Complete[/bold green]",
+                border_style="green",
+            )
+        )
 
 
 class ColorPreview:
     """Generate visual color previews."""
-    
+
     @staticmethod
     def _rgb_to_hex(color_rgb):
         """Convert RGB tuple to hex color.
-        
+
         Args:
             color_rgb: Tuple (R, G, B) or numpy uint8
-            
+
         Returns:
             Tuple (hex_str, r, g, b) - hex color code and integer values
         """
         try:
-            r = int(color_rgb[0]) if hasattr(color_rgb[0], '__int__') else int(color_rgb[0])
-            g = int(color_rgb[1]) if hasattr(color_rgb[1], '__int__') else int(color_rgb[1])
-            b = int(color_rgb[2]) if hasattr(color_rgb[2], '__int__') else int(color_rgb[2])
+            r = (
+                int(color_rgb[0])
+                if hasattr(color_rgb[0], "__int__")
+                else int(color_rgb[0])
+            )
+            g = (
+                int(color_rgb[1])
+                if hasattr(color_rgb[1], "__int__")
+                else int(color_rgb[1])
+            )
+            b = (
+                int(color_rgb[2])
+                if hasattr(color_rgb[2], "__int__")
+                else int(color_rgb[2])
+            )
         except (TypeError, ValueError, IndexError):
             r, g, b = 128, 128, 128
-        
+
         return f"#{r:02x}{g:02x}{b:02x}", r, g, b
-    
+
     @staticmethod
     def create_color_block(color_rgb, width=30):
         """Create a colored block using Unicode characters.
-        
+
         Args:
             color_rgb: Tuple (R, G, B)
             width: Width in characters
-            
+
         Returns:
             Rich Text object with colored block
         """
         hex_color, r, g, b = ColorPreview._rgb_to_hex(color_rgb)
         block_char = "█" * width
-        
+
         try:
             # Try to use RGB color directly
             return Text(block_char, style=f"on {hex_color}")
-        except:
+        except Exception:
             # Fallback to simpler styling
             return Text(block_char, style="on white")
-    
+
     @staticmethod
     def create_comparison(watermark_color):
         """Create a color comparison display with real colors.
-        
+
         Args:
             watermark_color: Tuple (R, G, B)
-            
+
         Returns:
             str: Rich-formatted comparison panel
         """
         hex_color, r, g, b = ColorPreview._rgb_to_hex(watermark_color)
-        
+
         # Determine if color is dark or light for text contrast
         luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
         text_color = "white" if luminance < 0.5 else "black"
-        
+
         # Create color blocks
         watermark_block = Text("█" * 25, style=f"on {hex_color}")
         document_block = Text("█" * 25, style="on white")
-        
+
         # Create sample text with contrast
-        sample_text = Text("Sample Watermark", style=f"{hex_color}")
         contrast_white = Text("On White Background", style=f"{text_color} on white")
         contrast_light = Text("Contrast Preview", style=f"{text_color} on #f0f0f0")
-        
+
         return f"""
 [bold cyan]Color Preview:[/bold cyan]
 
@@ -200,52 +213,50 @@ class ColorPreview:
 {contrast_white}
 {contrast_light}
 """
-    
+
     @staticmethod
     def create_color_table(colors, i18n_t=None):
         """Create a table with real color previews.
-        
+
         Args:
             colors: List of color dicts with 'rgb', 'coverage' keys
             i18n_t: Translation function
-            
+
         Returns:
             Rich Table object
         """
         if i18n_t is None:
-            i18n_t = lambda x, **kw: x
-        
+
+            def default_t(key, **kw):
+                return key
+
+            i18n_t = default_t
+
         table = Table(show_header=True, header_style="bold magenta", padding=(0, 1))
         table.add_column("#", style="cyan", width=4)
         table.add_column("Preview", width=25)
         table.add_column("RGB", style="green", width=18)
         table.add_column("Coverage", style="blue", width=12)
-        
+
         for i, color_data in enumerate(colors[:10]):
-            rgb = color_data.get('rgb', (128, 128, 128))
-            coverage = color_data.get('coverage', 0.0)
-            
+            rgb = color_data.get("rgb", (128, 128, 128))
+            coverage = color_data.get("coverage", 0.0)
+
             # Safely convert to int
             try:
-                r = int(rgb[0]) if hasattr(rgb[0], '__int__') else int(rgb[0])
-                g = int(rgb[1]) if hasattr(rgb[1], '__int__') else int(rgb[1])
-                b = int(rgb[2]) if hasattr(rgb[2], '__int__') else int(rgb[2])
+                r = int(rgb[0]) if hasattr(rgb[0], "__int__") else int(rgb[0])
+                g = int(rgb[1]) if hasattr(rgb[1], "__int__") else int(rgb[1])
+                b = int(rgb[2]) if hasattr(rgb[2], "__int__") else int(rgb[2])
             except (TypeError, ValueError, IndexError):
                 r, g, b = 128, 128, 128
-            
+
             # Create colored block
             hex_color = f"#{r:02x}{g:02x}{b:02x}"
             try:
                 block = Text("  " * 10 + "  ", style=f"on {hex_color}")
-            except:
+            except Exception:
                 block = Text("█" * 20)
-            
-            table.add_row(
-                str(i),
-                block,
-                f"RGB({r},{g},{b})",
-                f"{coverage:.1f}%"
-            )
-        
-        return table
 
+            table.add_row(str(i), block, f"RGB({r},{g},{b})", f"{coverage:.1f}%")
+
+        return table

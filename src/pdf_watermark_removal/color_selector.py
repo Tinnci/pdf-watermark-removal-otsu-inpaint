@@ -31,15 +31,21 @@ class ColorSelector:
         Returns:
             Tuple (R, G, B) of selected color or None for auto-detection
         """
-        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print(
+            "\n[bold cyan]═══════════════════════════════════════════════════════[/bold cyan]"
+        )
         self.console.print("[bold cyan]WATERMARK COLOR DETECTION[/bold cyan]")
-        self.console.print("[bold cyan]═══════════════════════════════════════════════════════[/bold cyan]")
+        self.console.print(
+            "[bold cyan]═══════════════════════════════════════════════════════[/bold cyan]"
+        )
 
         # Analyze and recommend
         colors = self.analyzer.analyze_watermark_color(image_rgb)
 
         if not colors:
-            self.console.print("[red]✗ No watermark colors detected. Using automatic detection.[/red]")
+            self.console.print(
+                "[red]✗ No watermark colors detected. Using automatic detection.[/red]"
+            )
             return None
 
         # Display recommended color with confidence
@@ -56,26 +62,28 @@ class ColorSelector:
             recommended: Recommended color dict
             all_colors: All detected colors
         """
-        rgb = recommended['rgb']
-        gray = recommended['gray']
-        confidence = recommended.get('confidence', 0)
-        coverage = recommended['coverage']
+        rgb = recommended["rgb"]
+        gray = recommended["gray"]
+        confidence = recommended.get("confidence", 0)
+        coverage = recommended["coverage"]
 
         # Create ASCII confidence bar for Windows compatibility
         filled = int(confidence / 5)
         empty = 20 - filled
         confidence_bar = "=" * filled + "-" * empty
-        confidence_color = "green" if confidence >= 85 else "yellow" if confidence >= 70 else "red"
+        confidence_color = (
+            "green" if confidence >= 85 else "yellow" if confidence >= 70 else "red"
+        )
 
         # Format recommendation panel with real color preview
         panel_content = f"""
-[bold cyan]{t('recommended_color')}:[/bold cyan]
+[bold cyan]{t("recommended_color")}:[/bold cyan]
 
-[bold]{t('rgb_value')}:[/bold] RGB{rgb}
-[bold]{t('gray_level')}:[/bold] {gray}
-[bold]{t('coverage')}:[/bold] {coverage:.1f}%
+[bold]{t("rgb_value")}:[/bold] RGB{rgb}
+[bold]{t("gray_level")}:[/bold] {gray}
+[bold]{t("coverage")}:[/bold] {coverage:.1f}%
 
-[bold]{t('confidence')}:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%
+[bold]{t("confidence")}:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%
 
 {ColorPreview.create_comparison(rgb)}
 """
@@ -100,22 +108,20 @@ class ColorSelector:
         table.add_column("Usage", style="dim blue")
 
         for color in alternatives:
-            rgb = color['rgb']
-            coverage = color['coverage']
-            percentage = color['percentage']
-            
+            rgb = color["rgb"]
+            coverage = color["coverage"]
+            percentage = color["percentage"]
+
             # Safely convert to int
             try:
-                r = int(rgb[0]) if hasattr(rgb[0], '__int__') else int(rgb[0])
-                g = int(rgb[1]) if hasattr(rgb[1], '__int__') else int(rgb[1])
-                b = int(rgb[2]) if hasattr(rgb[2], '__int__') else int(rgb[2])
+                r = int(rgb[0]) if hasattr(rgb[0], "__int__") else int(rgb[0])
+                g = int(rgb[1]) if hasattr(rgb[1], "__int__") else int(rgb[1])
+                b = int(rgb[2]) if hasattr(rgb[2], "__int__") else int(rgb[2])
             except (TypeError, ValueError, IndexError):
                 r, g, b = 128, 128, 128
-            
+
             table.add_row(
-                f"RGB({r},{g},{b})",
-                f"{coverage:.1f}%",
-                f"{percentage:.1f}% of text"
+                f"RGB({r},{g},{b})", f"{coverage:.1f}%", f"{percentage:.1f}% of text"
             )
 
         self.console.print(table)
@@ -130,37 +136,36 @@ class ColorSelector:
         Returns:
             Selected color or None
         """
-        confidence = recommended.get('confidence', 0)
+        confidence = recommended.get("confidence", 0)
 
         # High confidence: Just confirm
         if confidence >= 85:
             try:
                 proceed = click.confirm(
-                    f"\nUse this color ({confidence}% confidence)?",
-                    default=True
+                    f"\nUse this color ({confidence}% confidence)?", default=True
                 )
                 if proceed:
                     self.console.print("[green][+] Using recommended color[/green]")
-                    return recommended['rgb']
+                    return recommended["rgb"]
             except (EOFError, click.Abort):
                 self.console.print("[green]Using recommended color[/green]")
-                return recommended['rgb']
+                return recommended["rgb"]
 
         # Medium confidence: Ask if user wants alternatives
         if confidence >= 70:
             try:
                 show_alternatives = click.confirm(
                     f"\nMedium confidence ({confidence}%). Show alternatives?",
-                    default=False
+                    default=False,
                 )
                 if show_alternatives:
                     return self._select_from_alternatives(all_colors)
                 else:
                     self.console.print("[green][+] Using recommended color[/green]")
-                    return recommended['rgb']
+                    return recommended["rgb"]
             except (EOFError, click.Abort):
                 self.console.print("[green]Using recommended color[/green]")
-                return recommended['rgb']
+                return recommended["rgb"]
 
         # Low confidence: Show alternatives by default
         self.console.print("\n[yellow]Low confidence - showing alternatives[/yellow]")
@@ -185,55 +190,58 @@ class ColorSelector:
         table.add_column("Coverage", style="yellow", width=12)
 
         for i, color in enumerate(colors[:10]):
-            rgb = color['rgb']
-            coverage = color['coverage']
-            
+            rgb = color["rgb"]
+            coverage = color["coverage"]
+
             # Safely convert to int
             try:
-                r = int(rgb[0]) if hasattr(rgb[0], '__int__') else int(rgb[0])
-                g = int(rgb[1]) if hasattr(rgb[1], '__int__') else int(rgb[1])
-                b = int(rgb[2]) if hasattr(rgb[2], '__int__') else int(rgb[2])
+                r = int(rgb[0]) if hasattr(rgb[0], "__int__") else int(rgb[0])
+                g = int(rgb[1]) if hasattr(rgb[1], "__int__") else int(rgb[1])
+                b = int(rgb[2]) if hasattr(rgb[2], "__int__") else int(rgb[2])
             except (TypeError, ValueError, IndexError):
                 r, g, b = 128, 128, 128
-            
+
             # Create colored block
             hex_color = f"#{r:02x}{g:02x}{b:02x}"
             try:
                 from rich.text import Text
+
                 block = Text("  " * 10 + "  ", style=f"on {hex_color}")
-            except:
+            except Exception:
                 from rich.text import Text
+
                 block = Text("█" * 20)
-            
-            table.add_row(
-                str(i),
-                block,
-                f"RGB({r},{g},{b})",
-                f"{coverage:.1f}%"
-            )
-        
+
+            table.add_row(str(i), block, f"RGB({r},{g},{b})", f"{coverage:.1f}%")
+
         self.console.print(table)
 
         # Get selection
         while True:
             try:
-                choice = click.prompt(
-                    "\nSelect color number (or 'a' for auto)",
-                    type=str,
-                    default='a'
-                ).strip().lower()
+                choice = (
+                    click.prompt(
+                        "\nSelect color number (or 'a' for auto)", type=str, default="a"
+                    )
+                    .strip()
+                    .lower()
+                )
 
-                if choice == 'a' or choice == '':
+                if choice == "a" or choice == "":
                     self.console.print("[green]Using automatic detection[/green]")
                     return None
 
                 choice_idx = int(choice)
                 if 0 <= choice_idx < len(colors):
                     selected = colors[choice_idx]
-                    self.console.print(f"[green][+] Selected RGB{selected['rgb']}[/green]")
-                    return selected['rgb']
+                    self.console.print(
+                        f"[green][+] Selected RGB{selected['rgb']}[/green]"
+                    )
+                    return selected["rgb"]
                 else:
-                    self.console.print(f"[red]Invalid choice. Enter 0-{len(colors)-1} or 'a'[/red]")
+                    self.console.print(
+                        f"[red]Invalid choice. Enter 0-{len(colors) - 1} or 'a'[/red]"
+                    )
             except ValueError:
                 self.console.print("[red]Invalid input[/red]")
 
@@ -252,8 +260,7 @@ class ColorSelector:
 
         try:
             use_interactive = click.confirm(
-                "\nInteractively select watermark color?",
-                default=True
+                "\nInteractively select watermark color?", default=True
             )
             if not use_interactive:
                 self.console.print("[green]Using automatic detection[/green]")

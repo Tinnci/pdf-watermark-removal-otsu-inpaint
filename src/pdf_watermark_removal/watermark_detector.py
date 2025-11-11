@@ -2,20 +2,25 @@
 
 import cv2
 import numpy as np
-from collections import Counter
 
 
 class WatermarkDetector:
     """Detects watermarks using Otsu threshold segmentation and color analysis."""
 
-    def __init__(self, kernel_size=3, verbose=False, auto_detect_color=True, watermark_color=None):
+    def __init__(
+        self,
+        kernel_size=3,
+        verbose=False,
+        auto_detect_color=True,
+        watermark_color=None,
+    ):
         """Initialize the watermark detector.
 
         Args:
             kernel_size: Size of morphological kernel
             verbose: Enable verbose logging
             auto_detect_color: Automatically detect watermark color
-            watermark_color: Explicit watermark color (R, G, B) or None for auto-detection
+            watermark_color: Watermark color (R, G, B) or None
         """
         self.kernel_size = kernel_size
         self.verbose = verbose
@@ -34,43 +39,18 @@ class WatermarkDetector:
         if self.verbose:
             print("Analyzing image to detect watermark color...")
 
-        # Convert to HSV for better color separation
-        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        unique_grays, counts = np.unique(gray, return_counts=True)
+        sorted_idx = np.argsort(counts)[::-1]
 
-        # Focus on saturation and value channels
-        # Watermarks typically have lower saturation and value
-        s_channel = hsv[:, :, 1]
-        v_channel = hsv[:, :, 2]
-
-        # Get pixels with low saturation (likely watermark or text)
-        low_sat_mask = s_channel < 50
-
-        if np.count_nonzero(low_sat_mask) == 0:
-            if self.verbose:
-                print("No low-saturation pixels found, using grayscale analysis...")
-            return None
-
-        # Get the hue of low-saturation pixels
-        low_sat_pixels = hsv[low_sat_mask]
-
-        if len(low_sat_pixels) > 0:
-            # Most common hue value (likely watermark color)
-            hue_values = low_sat_pixels[:, 0]
-            most_common_hue = Counter(hue_values).most_common(1)[0][0]
-
-            if self.verbose:
-                print(f"Detected watermark hue: {most_common_hue}")
-
-            # Convert back to RGB for reference
-            hsv_color = np.uint8([[[most_common_hue, 100, 200]]])
-            rgb_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2RGB)[0][0]
-            bgr_color = tuple(reversed(rgb_color))
-
-            if self.verbose:
-                print(f"Estimated watermark color (BGR): {bgr_color}")
-
-            self.watermark_color = bgr_color
-            return bgr_color
+        for idx in sorted_idx[:5]:
+            gray_val = unique_grays[idx]
+            if 50 <= gray_val <= 220:
+                bgr_color = (gray_val, gray_val, gray_val)
+                if self.verbose:
+                    print(f"Detected watermark color (BGR): {bgr_color}")
+                self.watermark_color = bgr_color
+                return bgr_color
 
         return None
 

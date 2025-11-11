@@ -2,7 +2,6 @@
 
 import cv2
 import numpy as np
-from collections import Counter
 
 
 class ColorAnalyzer:
@@ -23,70 +22,49 @@ class ColorAnalyzer:
             image_rgb: Input image in RGB format
 
         Returns:
-            Dict with recommended color and alternatives
+            List of color dicts with recommended color first
         """
         if self.verbose:
             print("Analyzing watermark color distribution...")
 
-        # Convert to HSV for better color separation
-        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
-        s_channel = hsv[:, :, 1]
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        unique_grays, counts = np.unique(gray, return_counts=True)
+        sorted_idx = np.argsort(counts)[::-1]
 
-        # Get low-saturation pixels (text, watermarks, not photos)
-        low_sat_mask = s_channel < 80
-        
-        if np.count_nonzero(low_sat_mask) == 0:
-            if self.verbose:
-                print("No low-saturation pixels found")
-            return None
-
-        # Analyze grayscale distribution of low-saturation pixels
-        low_sat_grays = gray[low_sat_mask]
-        unique_grays, counts = np.unique(low_sat_grays, return_counts=True)
-
-        # Sort by frequency
-        sorted_indices = np.argsort(counts)[::-1]
-
-        # Calculate statistics
-        total_low_sat_pixels = len(low_sat_grays)
         total_pixels = gray.shape[0] * gray.shape[1]
 
         colors_info = []
-        for i, idx in enumerate(sorted_indices[:5]):  # Top 5 colors
+        for i, idx in enumerate(sorted_idx[:5]):
             gray_val = unique_grays[idx]
             count = counts[idx]
-            percentage = (count / total_low_sat_pixels) * 100
             coverage = (count / total_pixels) * 100
 
-            # Create RGB from grayscale
             rgb_color = (gray_val, gray_val, gray_val)
 
-            colors_info.append({
-                'index': i,
-                'rgb': rgb_color,
-                'bgr': tuple(reversed(rgb_color)),
-                'gray': gray_val,
-                'count': count,
-                'percentage': percentage,
-                'coverage': coverage,
-            })
+            colors_info.append(
+                {
+                    "index": i,
+                    "rgb": rgb_color,
+                    "bgr": tuple(reversed(rgb_color)),
+                    "gray": gray_val,
+                    "count": count,
+                    "coverage": coverage,
+                }
+            )
 
-        # Calculate confidence based on dominant color
         if colors_info:
-            dominant_percentage = colors_info[0]['percentage']
-            # High confidence if dominant color is >30% or very dominant
-            if dominant_percentage > 40:
+            coverage = colors_info[0]["coverage"]
+            if coverage > 40:
                 confidence = 95
-            elif dominant_percentage > 30:
+            elif coverage > 30:
                 confidence = 85
-            elif dominant_percentage > 20:
+            elif coverage > 20:
                 confidence = 75
             else:
                 confidence = 65
 
-            colors_info[0]['confidence'] = confidence
-            colors_info[0]['is_recommended'] = True
+            colors_info[0]["confidence"] = confidence
+            colors_info[0]["is_recommended"] = True
 
         return colors_info
 
@@ -100,7 +78,11 @@ class ColorAnalyzer:
         Returns:
             List of color dictionaries
         """
-        return self.analyze_watermark_color(image_rgb)[:num_colors] if self.analyze_watermark_color(image_rgb) else []
+        return (
+            self.analyze_watermark_color(image_rgb)[:num_colors]
+            if self.analyze_watermark_color(image_rgb)
+            else []
+        )
 
     def create_color_mask(self, image_rgb, color_rgb, tolerance=20):
         """Create a mask for pixels matching the given color.
@@ -120,4 +102,3 @@ class ColorAnalyzer:
         mask = np.abs(gray.astype(int) - target_gray) < tolerance
 
         return (mask * 255).astype(np.uint8)
-

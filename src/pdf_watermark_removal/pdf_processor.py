@@ -6,7 +6,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
-from pypdf import PdfReader, PdfWriter
 
 
 class PDFProcessor:
@@ -90,14 +89,11 @@ class PDFProcessor:
             if self.verbose:
                 print(f"  Processing image {i + 1}/{len(images)}...")
 
-            bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-            pil_img = Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+            pil_img = Image.fromarray(img_rgb)
             pil_images.append(pil_img)
 
         if pil_images:
-            pil_images[0].save(
-                output_path, save_all=True, append_images=pil_images[1:]
-            )
+            pil_images[0].save(output_path, save_all=True, append_images=pil_images[1:])
 
         if self.verbose:
             print(f"PDF saved to: {output_path}")

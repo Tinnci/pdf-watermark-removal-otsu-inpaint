@@ -1,20 +1,24 @@
 """Command-line interface for PDF watermark removal."""
 
 import sys
-from pathlib import Path
 import os
 
 import click
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
-from rich.style import Style
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 from .pdf_processor import PDFProcessor
 from .watermark_remover import WatermarkRemover
 from .color_selector import ColorSelector
-from .stats import ProcessingStats, ColorPreview
-from .i18n import get_system_locale, set_language, t
+from .stats import ProcessingStats
+from .i18n import set_language, t
 
 
 console = Console()
@@ -27,7 +31,7 @@ def parse_pages(pages_str):
         pages_str: String like "1,3,5" or "1-5" or None
 
     Returns:
-        List of page numbers or None
+        List of page numbers (1-indexed) or None
     """
     if pages_str is None:
         return None
@@ -36,12 +40,18 @@ def parse_pages(pages_str):
     for part in pages_str.split(","):
         part = part.strip()
         if "-" in part:
-            start, end = part.split("-")
-            pages.extend(range(int(start), int(end) + 1))
+            try:
+                start, end = part.split("-")
+                pages.extend(range(int(start), int(end) + 1))
+            except ValueError:
+                raise ValueError(f"Invalid page range: {part}")
         else:
-            pages.append(int(part))
+            try:
+                pages.append(int(part))
+            except ValueError:
+                raise ValueError(f"Invalid page number: {part}")
 
-    return sorted(set(pages))
+    return sorted(set(pages)) if pages else None
 
 
 def parse_color(color_str):
@@ -86,7 +96,7 @@ def parse_color(color_str):
     "--pages",
     default=None,
     type=str,
-    help="Pages to process (e.g., '1,3,5' or '1-5'). Process all pages if not specified.",
+    help="Pages to process ('1,3,5' or '1-5'). All pages if not set.",
 )
 @click.option(
     "--multi-pass",
@@ -104,7 +114,7 @@ def parse_color(color_str):
     "--color",
     default=None,
     type=str,
-    help="Watermark color as 'R,G,B' (e.g., '128,128,128'). Interactive if not specified.",
+    help="Watermark color 'R,G,B' (e.g., '128,128,128'). Interactive if not set.",
 )
 @click.option(
     "--auto-color",
@@ -124,24 +134,38 @@ def parse_color(color_str):
     is_flag=True,
     help="Enable verbose output",
 )
-def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, dpi, color, auto_color, lang, verbose):
+def main(
+    input_pdf,
+    output_pdf,
+    kernel_size,
+    inpaint_radius,
+    pages,
+    multi_pass,
+    dpi,
+    color,
+    auto_color,
+    lang,
+    verbose,
+):
     """Remove watermarks from PDF using Otsu threshold and inpaint."""
     try:
         # Set language
         if lang:
             set_language(lang)
-        
+
         # Initialize stats
         stats = ProcessingStats(verbose=verbose)
-        
+
         # Display header
-        console.print(Panel(
-            f"[bold cyan]{t('title')}[/bold cyan]\n"
-            f"[yellow]Input:[/yellow]  {input_pdf}\n"
-            f"[yellow]Output:[/yellow] {output_pdf}",
-            title="[bold]Configuration[/bold]",
-            border_style="cyan"
-        ))
+        console.print(
+            Panel(
+                f"[bold cyan]{t('title')}[/bold cyan]\n"
+                f"[yellow]Input:[/yellow]  {input_pdf}\n"
+                f"[yellow]Output:[/yellow] {output_pdf}",
+                title="[bold]Configuration[/bold]",
+                border_style="cyan",
+            )
+        )
 
         if verbose:
             console.print("\n[bold blue]Verbose Mode Enabled[/bold blue]")
@@ -158,7 +182,7 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
-                transient=True
+                transient=True,
             ) as progress:
                 task = progress.add_task(f"[cyan]{t('loading_pdf')}...", total=None)
                 first_page_images = processor.pdf_to_images(input_pdf, pages=[1])
@@ -167,8 +191,7 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
             if first_page_images:
                 selector = ColorSelector(verbose=verbose)
                 watermark_color = selector.get_color_for_detection(
-                    first_page_images[0],
-                    auto_detect=False
+                    first_page_images[0], auto_detect=False
                 )
 
         # Initialize remover with detected/selected color
@@ -181,25 +204,30 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
         )
 
         # Convert all pages
-        console.print("\n[bold]Step 1:[/bold] [yellow]Converting PDF to images...[/yellow]")
-        
+        msg = "\n[bold]Step 1:[/bold] [yellow]Converting PDF to images...[/yellow]"
+        console.print(msg)
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task("[cyan]Loading PDF", total=1)
             images = processor.pdf_to_images(input_pdf, pages=pages_list)
             progress.update(task, completed=1)
 
-        page_info = f"all {len(images)}" if not pages_list else f"{len(pages_list)} specified"
+        page_info = (
+            f"all {len(images)}" if not pages_list else f"{len(pages_list)} specified"
+        )
         console.print(f"[green]Loaded {page_info} pages[/green]\n")
 
         if verbose:
             if pages_list:
-                console.print(f"[blue]Processing {len(pages_list)} specified pages[/blue]")
+                console.print(
+                    f"[blue]Processing {len(pages_list)} specified pages[/blue]"
+                )
             else:
                 console.print(f"[blue]Processing all {len(images)} pages[/blue]")
 
@@ -212,13 +240,15 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TextColumn("-"),
-            TimeRemainingColumn()
+            TimeRemainingColumn(),
         ) as progress:
             task = progress.add_task("[cyan]Processing pages", total=len(images))
-            
+
             for i, img in enumerate(images):
                 if multi_pass > 1:
-                    processed = remover.remove_watermark_multi_pass(img, passes=multi_pass)
+                    processed = remover.remove_watermark_multi_pass(
+                        img, passes=multi_pass
+                    )
                 else:
                     processed = remover.remove_watermark(img)
                 processed_images.append(processed)
@@ -226,12 +256,14 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
 
         console.print("[green]Watermark removal completed[/green]\n")
 
-        console.print("[bold]Step 3:[/bold] [yellow]Converting images back to PDF...[/yellow]")
-        
+        console.print(
+            "[bold]Step 3:[/bold] [yellow]Converting images back to PDF...[/yellow]"
+        )
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task(f"[cyan]{t('saving_pdf')}", total=None)
             processor.images_to_pdf(processed_images, output_pdf)
@@ -243,21 +275,40 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
             stats.set_watermark_color(watermark_color, coverage=100.0)
         output_size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
         stats.set_output(output_pdf, output_size_mb)
-        
+
         # Display statistics
         stats.display_summary(i18n_t=t)
 
     except FileNotFoundError as e:
-        console.print(Panel(f"[red]{e}[/red]", title="[bold red]Error[/bold red]", border_style="red"))
+        console.print(
+            Panel(
+                f"[red]{e}[/red]",
+                title="[bold red]Error[/bold red]",
+                border_style="red",
+            )
+        )
         sys.exit(1)
     except ImportError as e:
-        console.print(Panel(f"[red]{e}[/red]", title="[bold red]Error[/bold red]", border_style="red"))
+        console.print(
+            Panel(
+                f"[red]{e}[/red]",
+                title="[bold red]Error[/bold red]",
+                border_style="red",
+            )
+        )
         sys.exit(1)
     except Exception as e:
         if verbose:
             import traceback
+
             traceback.print_exc()
-        console.print(Panel(f"[red]{e}[/red]", title="[bold red]Error[/bold red]", border_style="red"))
+        console.print(
+            Panel(
+                f"[red]{e}[/red]",
+                title="[bold red]Error[/bold red]",
+                border_style="red",
+            )
+        )
         sys.exit(1)
 
 
