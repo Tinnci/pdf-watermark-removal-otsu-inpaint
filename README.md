@@ -1,7 +1,7 @@
 # PDF Watermark Removal Tool
 
 [![PyPI version](https://badge.fury.io/py/pdf-watermark-removal-otsu-inpaint.svg)](https://pypi.org/project/pdf-watermark-removal-otsu-inpaint/)
-[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint/releases)
+[![Version](https://img.shields.io/badge/version-0.4.1-green.svg)](https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub](https://img.shields.io/badge/GitHub-Tinnci-black.svg)](https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint)
@@ -9,6 +9,12 @@
 A command-line tool to remove watermarks from PDF files using advanced image processing techniques including adaptive thresholding, intelligent color detection, and OpenCV inpainting. Features interactive watermark color selection and beautiful CLI with progress visualization.
 
 ## 🎯 Key Features
+
+- **🧠 Intelligent Document Classification**: Auto-detects document type (Electronic/Scanned/Mixed)
+  - Multi-dimensional visual analysis (color, text, edges, noise)
+  - Automatic parameter optimization for each type
+  - Confidence-scored classification
+  - Can be disabled with `--no-auto-classify`
 
 - **Intelligent Color Detection**: Automatically classifies colors as BACKGROUND, WATERMARK, TEXT, or NOISE
   - Multi-pass analysis with confidence scoring
@@ -19,25 +25,30 @@ A command-line tool to remove watermarks from PDF files using advanced image pro
   - Adaptive Gaussian thresholding for better precision than traditional Otsu
   - Combined color and saturation analysis
   - Automatic background (white area) exclusion
+  - Dark text protection (RGB 0-80 preserved)
   - Morphological operations for noise removal
   
 - **Precision Inpainting**:
   - OpenCV TELEA algorithm with dynamic radius adjustment
   - Coverage-based parameter optimization
+  - **Strength control**: `--inpaint-strength` (0.5-1.5) for fine-tuned removal
   - Progressive multi-pass removal for stubborn watermarks
   - Accurate color space handling (RGB ↔ BGR conversion)
 
 - **Production Quality CLI**:
   - Beautiful Rich-formatted panels and progress bars
+  - Multi-level progress tracking (Overall + Per-Page)
   - Internationalization support (English & Chinese)
   - Detailed logging and statistics
-  - Robust error handling
+  - Error handling with `--skip-errors` to continue on failures
 
 - **Flexible Processing**:
   - Batch process multiple pages
   - Select specific pages or ranges
   - Adjustable DPI for different quality needs
   - Per-page statistics and coverage reporting
+  - Debug mode: `--debug-mask` generates detection preview
+  - Strength visibility: `--show-strength` displays parameters
 
 ## Installation
 
@@ -104,21 +115,68 @@ pdf-watermark-removal input.pdf output.pdf \
 ## Command-Line Options
 
 ```
-INPUT_PDF                  Path to input PDF file
-OUTPUT_PDF                 Path to output PDF file
+INPUT_PDF                     Path to input PDF file
+OUTPUT_PDF                    Path to output PDF file
 
 OPTIONS:
-  --color TEXT             Watermark color as 'R,G,B' (e.g., '128,128,128')
-                          Interactive selection if not specified
-  --auto-color             Skip interactive selection, use automatic detection
-  --pages TEXT             Pages to process (e.g., '1,3,5' or '1-5')
-                          Process all pages if not specified
-  --kernel-size INTEGER    Morphological kernel size (default: 3)
-  --inpaint-radius INTEGER Inpainting radius (default: 2)
-  --multi-pass INTEGER     Number of removal passes (default: 1)
-  --dpi INTEGER            DPI for PDF rendering (default: 150)
-  -v, --verbose            Enable verbose output
-  --help                   Show help message
+  --color TEXT                Watermark color as 'R,G,B' (e.g., '128,128,128')
+                             Interactive selection if not specified
+  --auto-color                Skip interactive selection, use automatic detection
+  --pages TEXT                Pages to process (e.g., '1,3,5' or '1-5')
+                             Process all pages if not specified
+  
+  --kernel-size INTEGER       Morphological kernel size (default: 3)
+  --inpaint-radius INTEGER    Inpainting radius (default: 2)
+  --inpaint-strength FLOAT    Inpainting strength 0.5-1.5 (default: 1.0)
+                             0.5=light, 1.0=medium, 1.5=strong
+  --multi-pass INTEGER        Number of removal passes (default: 1)
+  --dpi INTEGER               DPI for PDF rendering (default: 150)
+  
+  --color-tolerance INTEGER   Color matching tolerance 0-255 (default: 30)
+                             Lower=stricter matching
+  --protect-text              Protect dark text from removal (default: True)
+  
+  --no-auto-classify          Disable automatic document type detection
+  --show-strength             Display per-page strength parameters
+  --debug-mask                Save debug preview of watermark detection
+  --skip-errors               Skip pages with errors instead of failing
+  
+  --lang TEXT                 Force language (zh_CN, en_US)
+                             Auto-detect if not specified
+  -v, --verbose               Enable verbose output
+  --help                      Show help message
+```
+
+## Common Use Cases
+
+### One-Click Intelligent Processing
+```bash
+# Auto-classify document type and optimize parameters
+pdf-watermark-removal input.pdf output.pdf
+```
+
+### Fine-Tuned Control
+```bash
+# Adjust removal strength for stubborn watermarks
+pdf-watermark-removal input.pdf output.pdf --inpaint-strength 1.3
+
+# Stricter color matching for electronic documents
+pdf-watermark-removal input.pdf output.pdf --color-tolerance 15
+
+# Multi-pass for heavy watermarks
+pdf-watermark-removal input.pdf output.pdf --multi-pass 2
+
+# Debug mode to inspect detection
+pdf-watermark-removal input.pdf output.pdf --debug-mask --verbose
+```
+
+### Batch Processing with Error Handling
+```bash
+# Continue processing if some pages fail
+pdf-watermark-removal large_document.pdf output.pdf --skip-errors
+
+# Process subset of pages only
+pdf-watermark-removal input.pdf output.pdf --pages 1-50 --skip-errors
 ```
 
 ## How It Works
@@ -129,30 +187,21 @@ OPTIONS:
 - User selects watermark color or confirms automatic selection
 - Supports coarse (3) and fine (10) color options
 
-### 2. Watermark Detection (Otsu Threshold)
-- Converts each PDF page to image at specified DPI
-- Converts image to grayscale
-- Applies Otsu's automatic thresholding to create binary image
-- Uses morphological operations (open and close) to refine mask
-- Combines with color saturation analysis for better detection
-- Filters small noise components
-
-### 3. Watermark Removal (Inpainting)
-- Uses detected mask to identify watermark regions
-- Applies OpenCV's TELEA inpainting method
-- Reconstructs watermarked areas using surrounding texture
-- Supports multi-pass for stubborn watermarks
-
-### 4. PDF Reconstruction
-- Converts processed images back to PDF
-- Preserves document layout and quality
-
 ## Algorithm Details
+
+### 0. Document Type Classification
+- Analyzes first page using 4 visual dimensions:
+  - **Color Discreteness**: Electronic docs have <50 colors, scanned >200 colors
+  - **Text Concentration**: Pure black text (0-50 gray) indicates electronic doc
+  - **Edge Sharpness**: Laplacian variance analysis
+  - **Noise Level**: Denoising comparison
+- Returns confidence score and auto-optimized parameters
+- User can disable with `--no-auto-classify`
 
 ### 1. Intelligent Color Classification
 The tool uses multi-dimensional analysis to classify colors:
 - **BACKGROUND**: Gray level 240-255 + coverage >60% → confidence 0%
-- **WATERMARK**: Gray level 180-240 + coverage 2-15% → dynamic confidence (20-100%)
+- **WATERMARK**: Gray level 100-250 + coverage 1-20% → dynamic confidence (20-100%)
 - **TEXT**: Gray level 0-80 + coverage <5% → confidence 0%
 - **NOISE**: All other patterns → confidence 0%
 
@@ -170,12 +219,30 @@ Combines multiple detection methods:
 - **Background Protection**: Explicitly excludes white/bright areas (>250 gray)
 - **Morphological Refinement**: Opens (removes small noise) then closes (fills holes)
 
-### 3. TELEA Inpainting
-Uses OpenCV's Fast Marching Method:
-- **Dynamic Radius**: Adjusted based on watermark coverage (radius = 2 + coverage×5)
-- **Color Space Accuracy**: Converts RGB→BGR for processing, maintains accuracy
-- **Early Termination**: Skips processing if no watermark detected
-- **Multi-pass Support**: Progressive mask expansion for difficult watermarks
+### 2. Adaptive Watermark Detection
+Combines multiple detection strategies:
+- **Adaptive Gaussian Thresholding**: Better than traditional Otsu for varying lighting
+- **Color-based Detection**: Matches detected watermark color (±tolerance)
+- **Saturation Analysis**: Identifies low-saturation watermark regions
+- **Background Protection**: Excludes very bright areas (>250 gray)
+- **Text Protection**: Preserves dark text regions (0-80 gray)
+
+Dynamic Detection Parameters:
+```
+- Color tolerance: Adjusts based on document type (18-32)
+- Kernel size: 3 for electronic, 5 for scanned documents
+- Aspect ratio filtering: Removes thin text-like components
+```
+
+### 3. Strength-Controlled Inpainting
+Uses OpenCV's TELEA algorithm with blending:
+- **Inpaint Strength** (0.5-1.5): Controls blend ratio
+  - 0.5 = 50% blend (preserve original)
+  - 1.0 = 100% replacement (standard)
+  - 1.5 = 150% radius boost (aggressive)
+- **Dynamic Radius**: base_radius + (coverage × 10 × strength)
+- **Multi-pass Support**: Progressive expansion for stubborn watermarks
+- **Color Space Accuracy**: RGB→BGR conversion for proper processing
 
 ### 4. PDF Reconstruction
 Preserves document fidelity:
