@@ -1,16 +1,14 @@
-"""Interactive CLI utilities for watermark color selection using rich."""
+"""Interactive CLI utilities for watermark color selection with optimized UX."""
 
 import click
-import numpy as np
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.style import Style
 from .color_analyzer import ColorAnalyzer
 
 
 class ColorSelector:
-    """Interactive color selection for watermark detection."""
+    """Optimized interactive color selection with single-step flow."""
 
     def __init__(self, verbose=False):
         """Initialize color selector.
@@ -22,130 +20,192 @@ class ColorSelector:
         self.verbose = verbose
         self.console = Console()
 
-    def select_watermark_color_interactive(self, image_rgb, coarse=True):
-        """Interactively select watermark color from image.
+    def select_watermark_color_interactive(self, image_rgb):
+        """Smart one-step color selection with auto-recommendation.
 
         Args:
             image_rgb: First page image for analysis
-            coarse: If True, show 3 colors; if False, show 10 colors
 
         Returns:
-            Tuple (R, G, B) of selected color or None
+            Tuple (R, G, B) of selected color or None for auto-detection
         """
-        num_colors = 3 if coarse else 10
-
-        self.console.print("\n" + "=" * 60)
+        self.console.print("\n[bold cyan]═══════════════════════════════════════════════════════[/bold cyan]")
         self.console.print("[bold cyan]WATERMARK COLOR DETECTION[/bold cyan]")
-        self.console.print("=" * 60)
+        self.console.print("[bold cyan]═══════════════════════════════════════════════════════[/bold cyan]")
 
-        # Analyze colors
-        self.console.print(f"\n[yellow]Analyzing {num_colors} most common colors in the document...[/yellow]")
-        colors = self.analyzer.get_dominant_colors(image_rgb, num_colors=num_colors)
+        # Analyze and recommend
+        colors = self.analyzer.analyze_watermark_color(image_rgb)
 
         if not colors:
-            self.console.print("[red]No colors detected. Using automatic detection.[/red]")
+            self.console.print("[red]✗ No watermark colors detected. Using automatic detection.[/red]")
             return None
 
-        # Display options
-        self.console.print("\n[bold]Detected colors (likely watermark or text):[/bold]\n")
-        self._display_colors_table(colors)
+        # Display recommended color with confidence
+        recommended = colors[0]
+        self._display_recommendation(recommended, colors)
 
-        # Get user input
+        # Smart decision tree
+        return self._interactive_decision(recommended, colors)
+
+    def _display_recommendation(self, recommended, all_colors):
+        """Display the recommended color with confidence and alternatives.
+
+        Args:
+            recommended: Recommended color dict
+            all_colors: All detected colors
+        """
+        rgb = recommended['rgb']
+        gray = recommended['gray']
+        confidence = recommended.get('confidence', 0)
+        coverage = recommended['coverage']
+
+        # Create ASCII confidence bar for Windows compatibility
+        filled = int(confidence / 5)
+        empty = 20 - filled
+        confidence_bar = "=" * filled + "-" * empty
+        confidence_color = "green" if confidence >= 85 else "yellow" if confidence >= 70 else "red"
+
+        # Format recommendation panel
+        panel_content = f"""
+[bold cyan]Recommended Watermark Color:[/bold cyan]
+
+[bold]RGB:[/bold] {rgb}  [bold]Gray:[/bold] {gray}  [bold]Coverage:[/bold] {coverage:.1f}%
+
+[bold]Confidence:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%
+(based on grayscale clustering analysis)
+"""
+
+        self.console.print(Panel(panel_content, border_style="cyan"))
+
+        # Show alternatives if available
+        if len(all_colors) > 1:
+            self.console.print("\n[dim]Other detected colors:[/dim]")
+            self._display_alternatives_table(all_colors[1:4])
+
+    def _display_alternatives_table(self, alternatives):
+        """Display alternative colors in a compact table.
+
+        Args:
+            alternatives: List of alternative color dicts
+        """
+        table = Table(show_header=True, header_style="dim magenta", padding=(0, 1))
+        table.add_column("RGB", style="dim cyan")
+        table.add_column("Coverage", style="dim yellow")
+        table.add_column("Usage", style="dim blue")
+
+        for color in alternatives:
+            rgb = color['rgb']
+            coverage = color['coverage']
+            percentage = color['percentage']
+            
+            table.add_row(
+                f"{rgb}",
+                f"{coverage:.1f}%",
+                f"{percentage:.1f}% of text"
+            )
+
+        self.console.print(table)
+
+    def _interactive_decision(self, recommended, all_colors):
+        """Smart interactive decision with minimal confirmations.
+
+        Args:
+            recommended: Recommended color
+            all_colors: All detected colors
+
+        Returns:
+            Selected color or None
+        """
+        confidence = recommended.get('confidence', 0)
+
+        # High confidence: Just confirm
+        if confidence >= 85:
+            try:
+                proceed = click.confirm(
+                    f"\nUse this color ({confidence}% confidence)?",
+                    default=True
+                )
+                if proceed:
+                    self.console.print("[green][+] Using recommended color[/green]")
+                    return recommended['rgb']
+            except (EOFError, click.Abort):
+                self.console.print("[green]Using recommended color[/green]")
+                return recommended['rgb']
+
+        # Medium confidence: Ask if user wants alternatives
+        if confidence >= 70:
+            try:
+                show_alternatives = click.confirm(
+                    f"\nMedium confidence ({confidence}%). Show alternatives?",
+                    default=False
+                )
+                if show_alternatives:
+                    return self._select_from_alternatives(all_colors)
+                else:
+                    self.console.print("[green][+] Using recommended color[/green]")
+                    return recommended['rgb']
+            except (EOFError, click.Abort):
+                self.console.print("[green]Using recommended color[/green]")
+                return recommended['rgb']
+
+        # Low confidence: Show alternatives by default
+        self.console.print("\n[yellow]Low confidence - showing alternatives[/yellow]")
+        return self._select_from_alternatives(all_colors)
+
+    def _select_from_alternatives(self, colors):
+        """Let user select from alternatives with visual table.
+
+        Args:
+            colors: List of color dicts
+
+        Returns:
+            Selected color or None
+        """
+        self.console.print("\n[bold]Select from available colors:[/bold]\n")
+
+        # Display selection table
+        table = Table(show_header=True, header_style="bold magenta", padding=(0, 1))
+        table.add_column("#", style="cyan", width=3)
+        table.add_column("Coverage %", style="yellow", width=10)
+        table.add_column("RGB Value", style="green")
+
+        for i, color in enumerate(colors[:10]):
+            rgb = color['rgb']
+            coverage = color['coverage']
+            
+            table.add_row(
+                str(i),
+                f"{coverage:.1f}%",
+                f"{rgb}"
+            )
+
+        self.console.print(table)
+
+        # Get selection
         while True:
             try:
                 choice = click.prompt(
-                    "\nSelect color number (0-indexed) or 'a' for automatic",
+                    "\nSelect color number (or 'a' for auto)",
                     type=str,
                     default='a'
                 ).strip().lower()
 
                 if choice == 'a' or choice == '':
-                    self.console.print("[green]Using automatic color detection...[/green]")
+                    self.console.print("[green]Using automatic detection[/green]")
                     return None
 
                 choice_idx = int(choice)
                 if 0 <= choice_idx < len(colors):
                     selected = colors[choice_idx]
-                    
-                    # Display selected color with preview
-                    self._display_selected_color(selected)
-
-                    # Ask if user wants finer control
-                    if coarse and choice_idx > 0:
-                        refine = click.confirm(
-                            "\nShow more color options for finer selection?",
-                            default=False
-                        )
-                        if refine:
-                            return self.select_watermark_color_interactive(image_rgb, coarse=False)
-
+                    self.console.print(f"[green][+] Selected RGB{selected['rgb']}[/green]")
                     return selected['rgb']
                 else:
-                    self.console.print(f"[red]Invalid choice. Please enter 0-{len(colors)-1} or 'a'[/red]")
+                    self.console.print(f"[red]Invalid choice. Enter 0-{len(colors)-1} or 'a'[/red]")
             except ValueError:
-                self.console.print("[red]Invalid input. Please enter a number or 'a'[/red]")
-
-    def _display_colors_table(self, colors):
-        """Display color options with rich table visualization.
-
-        Args:
-            colors: List of color dictionaries
-        """
-        table = Table(title="Color Analysis", show_header=True, header_style="bold magenta")
-        table.add_column("Index", style="cyan", width=8)
-        table.add_column("Color Preview", width=30)
-        table.add_column("RGB Value", style="green")
-        table.add_column("Gray Level", style="yellow")
-        table.add_column("Percentage", style="blue")
-
-        for i, color_data in enumerate(colors):
-            rgb = color_data['rgb']
-            percentage = color_data['percentage']
-            gray_val = color_data['gray']
-
-            # Create visual bar using Unicode blocks
-            bar_length = min(int(percentage / 2), 20)
-            bar = "█" * bar_length + "░" * (20 - bar_length)
-
-            # Color the bar based on the actual color
-            bar_style = f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
-
-            table.add_row(
-                str(i),
-                f"[{bar_style}]{bar}[/{bar_style}]",
-                f"RGB{rgb}",
-                str(gray_val),
-                f"{percentage:.1f}%"
-            )
-
-        self.console.print(table)
-
-    def _display_selected_color(self, color_data):
-        """Display selected color with detailed information.
-
-        Args:
-            color_data: Selected color dictionary
-        """
-        rgb = color_data['rgb']
-        percentage = color_data['percentage']
-        gray_val = color_data['gray']
-
-        # Create a colored panel for preview
-        preview_text = "   " * 10  # Large colored block
-        color_style = f"rgb({rgb[0]},{rgb[1]},{rgb[2]}) on rgb({rgb[0]},{rgb[1]},{rgb[2]})"
-
-        panel_content = f"""
-[{color_style}]{preview_text}[/{color_style}]
-
-RGB Value: [green]{rgb}[/green]
-Gray Level: [yellow]{gray_val}[/yellow]
-Percentage in document: [blue]{percentage:.2f}%[/blue]
-        """
-
-        self.console.print(Panel(panel_content, title="[bold]Selected Watermark Color[/bold]", border_style="green"))
+                self.console.print("[red]Invalid input[/red]")
 
     def get_color_for_detection(self, first_image_rgb, auto_detect=False):
-        """Get watermark color for detection.
+        """Get watermark color with optimized UX flow.
 
         Args:
             first_image_rgb: First page image
@@ -159,23 +219,14 @@ Percentage in document: [blue]{percentage:.2f}%[/blue]
 
         try:
             use_interactive = click.confirm(
-                "\nWould you like to interactively select the watermark color?",
-                default=False
-            )
-            if not use_interactive:
-                self.console.print("[green]Using automatic color detection...[/green]")
-                return None
-        except (EOFError, click.Abort):
-            self.console.print("\n[green]Using automatic color detection...[/green]")
-            return None
-
-        # Ask for coarse vs fine selection
-        try:
-            use_coarse = click.confirm(
-                "Use coarse color selection (3 main colors)?",
+                "\nInteractively select watermark color?",
                 default=True
             )
+            if not use_interactive:
+                self.console.print("[green]Using automatic detection[/green]")
+                return None
         except (EOFError, click.Abort):
-            use_coarse = True
+            self.console.print("\n[green]Using automatic detection[/green]")
+            return None
 
-        return self.select_watermark_color_interactive(first_image_rgb, coarse=use_coarse)
+        return self.select_watermark_color_interactive(first_image_rgb)
