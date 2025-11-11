@@ -136,6 +136,13 @@ class WatermarkDetector:
         # Combine thresholding and color detection
         mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
 
+        # Protect white background: exclude very bright areas (>250 gray level)
+        # These are typically document backgrounds, not watermarks
+        _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
+        # background_mask is 255 where gray > 250, 0 elsewhere
+        # Set mask to 0 where background_mask is 255 (white areas)
+        mask[background_mask == 255] = 0
+
         if self.verbose:
             detected_pixels = np.count_nonzero(mask)
             total_pixels = mask.shape[0] * mask.shape[1]

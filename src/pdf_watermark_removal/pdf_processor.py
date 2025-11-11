@@ -3,7 +3,6 @@
 import io
 from pathlib import Path
 
-import cv2
 import numpy as np
 from PIL import Image
 
@@ -65,7 +64,8 @@ class PDFProcessor:
             pix = page.get_pixmap(matrix=fitz.Matrix(self.dpi / 72, self.dpi / 72))
             img_data = pix.tobytes("ppm")
             img = Image.open(io.BytesIO(img_data))
-            img_rgb = cv2.cvtColor(np.array(img), cv2.COLOR_BGR2RGB)
+            # PIL Image.open returns RGB format, no color conversion needed
+            img_rgb = np.array(img)
             images.append(img_rgb)
 
         doc.close()

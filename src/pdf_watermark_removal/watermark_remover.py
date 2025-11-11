@@ -49,6 +49,12 @@ class WatermarkRemover:
         mask = self.detector.detect_watermark_mask(image_rgb)
         mask = self.detector.refine_mask(mask)
 
+        # Skip processing if no watermark detected
+        if np.count_nonzero(mask) == 0:
+            if self.verbose:
+                print("No watermark detected, returning original image")
+            return image_rgb.astype(np.uint8)
+
         if self.verbose:
             print(f"Applying inpainting with radius {self.inpaint_radius}...")
 
@@ -63,22 +69,14 @@ class WatermarkRemover:
                 f"dynamic radius: {dynamic_radius}"
             )
 
-        # Apply inpainting directly on RGB format
-        # Modern OpenCV supports RGB without conversion
-        restored = cv2.inpaint(
-            image_rgb.astype(np.uint8), mask, dynamic_radius, cv2.INPAINT_TELEA
-        )
+        # Convert RGB to BGR for OpenCV inpainting (best practice for color accuracy)
+        image_bgr = cv2.cvtColor(image_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
 
-        # Post-processing: preserve edge information from original
-        if watermark_coverage > 0.02:  # Only if meaningful watermark detected
-            edges = cv2.Canny(image_rgb, 100, 200)
-            kernel = np.ones((3, 3), np.uint8)
-            edge_mask = cv2.dilate(edges, kernel, iterations=1)
+        # Apply inpainting using TELEA algorithm
+        restored_bgr = cv2.inpaint(image_bgr, mask, dynamic_radius, cv2.INPAINT_TELEA)
 
-            # Blend: use original image where edges are strong
-            restored = np.where(edge_mask[:, :, None] > 0, image_rgb, restored).astype(
-                np.uint8
-            )
+        # Convert back to RGB
+        restored = cv2.cvtColor(restored_bgr, cv2.COLOR_BGR2RGB)
 
         return restored
 
