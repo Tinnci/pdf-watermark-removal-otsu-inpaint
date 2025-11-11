@@ -20,6 +20,7 @@ from .watermark_remover import WatermarkRemover
 from .color_selector import ColorSelector
 from .stats import ProcessingStats
 from .i18n import set_language, t
+from .document_classifier import DocumentClassifier, get_optimal_parameters
 
 
 console = Console()
@@ -160,6 +161,12 @@ def parse_color(color_str):
     help="Display strength parameters in progress feedback",
 )
 @click.option(
+    "--auto-classify",
+    is_flag=True,
+    default=False,
+    help="Auto-detect document type and optimize parameters",
+)
+@click.option(
     "--lang",
     default=None,
     type=str,
@@ -187,6 +194,7 @@ def main(
     debug_mask,
     skip_errors,
     show_strength,
+    auto_classify,
     lang,
     verbose,
 ):
@@ -281,6 +289,61 @@ def main(
             f"all {len(images)}" if not pages_list else f"{len(pages_list)} specified"
         )
         console.print(f"[green]Loaded {page_info} pages[/green]\n")
+
+        # Auto-classify document type and optimize parameters
+        if auto_classify and images:
+            console.print(
+                "[bold]Step 1.5:[/bold] [yellow]Analyzing document type...[/yellow]"
+            )
+            classifier = DocumentClassifier(verbose=verbose)
+            classification = classifier.classify(images[0])
+
+            # Get optimized parameters
+            auto_params = get_optimal_parameters(classification.doc_type)
+
+            # Display classification results
+            metrics_str = "\n".join(
+                [
+                    f"  • {key.replace('_', ' ').title()}: {val:.1f}"
+                    for key, val in classification.metrics.items()
+                ]
+            )
+
+            console.print(
+                Panel(
+                    f"[bold cyan]Document Type:[/bold cyan] [green]{classification.doc_type.value.upper()}[/green]\n"
+                    f"[bold cyan]Confidence:[/bold cyan] [green]{classification.confidence:.1f}%[/green]\n\n"
+                    f"[bold]Analysis Metrics:[/bold]\n{metrics_str}\n\n"
+                    f"[bold]Auto-Optimized Parameters:[/bold]\n"
+                    f"  • Color tolerance: [green]{auto_params['color_tolerance']}[/green]\n"
+                    f"  • Inpaint strength: [green]{auto_params['inpaint_strength']}[/green]\n"
+                    f"  • Kernel size: [green]{auto_params['kernel_size']}[/green]\n"
+                    f"  • Multi-pass: [green]{auto_params['multi_pass']}[/green]\n"
+                    f"  • DPI: [green]{auto_params['dpi']}[/green]",
+                    title="[bold]Smart Parameter Optimization[/bold]",
+                    border_style="cyan",
+                )
+            )
+
+            # Apply auto parameters (user params take precedence)
+            color_tolerance = (
+                color_tolerance
+                if color_tolerance != 30
+                else auto_params["color_tolerance"]
+            )
+            inpaint_strength = (
+                inpaint_strength
+                if inpaint_strength != 1.0
+                else auto_params["inpaint_strength"]
+            )
+            kernel_size = (
+                kernel_size if kernel_size != 3 else auto_params["kernel_size"]
+            )
+            multi_pass = multi_pass if multi_pass != 1 else auto_params["multi_pass"]
+            dpi = dpi if dpi != 150 else auto_params["dpi"]
+            console.print(
+                "[green]✓ Parameters optimized based on document type[/green]\n"
+            )
 
         # Debug mode: preview first page detection
         if debug_mask and images:
