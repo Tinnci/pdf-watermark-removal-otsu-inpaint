@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pdf-watermark-removal-otsu-inpaint"
-version = "0.1.0"
+version = "0.2.0"
 description = "Remove watermarks from PDF using Otsu threshold segmentation and OpenCV inpaint"
 readme = "README.md"
 requires-python = ">=3.8"
