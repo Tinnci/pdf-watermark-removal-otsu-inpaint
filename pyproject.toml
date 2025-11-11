@@ -35,12 +35,16 @@ dependencies = [
     "click>=8.0.0",
     "PyMuPDF>=1.23.0",
     "rich>=13.0.0",
+    "requests>=2.28.0",
+    "ultralytics>=8.3.227",
 ]
 
 [project.scripts]
 pdf-watermark-removal = "pdf_watermark_removal.cli:main"
 
 [project.optional-dependencies]
+yolo = ["ultralytics>=8.3.0"]
+yolo-gpu = ["ultralytics>=8.3.0", "torch>=2.0.0"]
 dev = [
     "pytest>=7.0.0",
     "black>=23.0.0",

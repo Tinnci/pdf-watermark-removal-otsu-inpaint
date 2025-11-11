@@ -1,7 +1,9 @@
-"""Watermark detection using multiple methods: traditional CV or YOLOv8."""
+"""Watermark detection using multiple methods: traditional CV or YOLO."""
 
 import cv2
 import numpy as np
+
+from .model_manager import ModelManager
 
 
 class WatermarkDetector:
@@ -19,6 +21,9 @@ class WatermarkDetector:
         yolo_model_path="yolov8n-seg.pt",
         yolo_conf_thres=0.25,
         yolo_device="auto",
+        yolo_version="v8",
+        auto_download_model=True,
+        color_weight=1.0,
     ):
         """Initialize the watermark detector.
 
@@ -30,37 +35,65 @@ class WatermarkDetector:
             protect_text: Protect dark text from being removed
             color_tolerance: Color matching tolerance (0-255, default 30)
             detection_method: 'traditional' or 'yolo'
-            yolo_model_path: Path to YOLOv8 model
-            yolo_conf_thres: YOLOv8 confidence threshold
-            yolo_device: YOLOv8 device ('cpu', 'cuda', 'auto')
+            yolo_model_path: Path to YOLO model
+            yolo_conf_thres: YOLO confidence threshold
+            yolo_device: YOLO device ('cpu', 'cuda', 'auto')
+            yolo_version: 'v8', 'v12', or 'v11' (default: v8)
+            auto_download_model: Automatically download YOLO model if not found
+            color_weight: Weight for color-based detection (1.0=normal, 2.0=double weight)
         """
         self.method = detection_method
         self.verbose = verbose
+        # Store kernel_size for both methods (used in refine_mask)
+        self.kernel_size = kernel_size
 
         if detection_method == "yolo":
             try:
-                from .yolo_detector import YOLOv8WatermarkDetector
+                from .yolo_detector import YOLOWatermarkDetector, YOLOVersion
 
-                self.detector = YOLOv8WatermarkDetector(
+                # Determine version enum first
+                version_enum = (
+                    YOLOVersion.V8
+                    if yolo_version == "v8"
+                    else YOLOVersion.V12
+                    if yolo_version == "v12"
+                    else YOLOVersion.V11
+                )
+
+                # Auto-select model based on version if using default
+                if yolo_model_path == "yolov8n-seg.pt":
+                    if version_enum == YOLOVersion.V12:
+                        yolo_model_path = "yolov12n-seg.pt"
+                    elif version_enum == YOLOVersion.V11:
+                        yolo_model_path = "yolo11x-watermark.pt"
+
+                # Auto-download model if needed
+                if auto_download_model:
+                    manager = ModelManager(verbose=verbose)
+                    yolo_model_path = str(manager.get_model_path(yolo_model_path))
+
+                self.detector = YOLOWatermarkDetector(
                     model_path=yolo_model_path,
                     conf_thres=yolo_conf_thres,
                     device=yolo_device,
                     verbose=verbose,
+                    version=version_enum,
                 )
-            except ImportError:
+            except ImportError as e:
+                # Provide clear guidance
+                error_msg = (
+                    "YOLO detection requires 'ultralytics' package. "
+                    "Install with: pip install ultralytics>=8.3.0 "
+                    "or pip install pdf-watermark-removal-otsu-inpaint[yolo]"
+                )
                 if verbose:
-                    print(
-                        "[WatermarkDetector] YOLOv8 not available, "
-                        "falling back to traditional method"
-                    )
-                self.method = "traditional"
-                self._init_traditional(
-                    kernel_size,
-                    auto_detect_color,
-                    watermark_color,
-                    protect_text,
-                    color_tolerance,
-                )
+                    print(f"[ERROR] {error_msg}")
+                    print(f"[DEBUG] Original error: {e}")
+                raise ImportError(error_msg) from e
+            except Exception as e:
+                if verbose:
+                    print(f"[ERROR] YOLO initialization failed: {e}")
+                raise
         else:
             self._init_traditional(
                 kernel_size,
@@ -68,6 +101,7 @@ class WatermarkDetector:
                 watermark_color,
                 protect_text,
                 color_tolerance,
+                color_weight,
             )
 
     def _init_traditional(
@@ -77,6 +111,7 @@ class WatermarkDetector:
         watermark_color,
         protect_text,
         color_tolerance,
+        color_weight,
     ):
         """Initialize traditional detection parameters."""
         self.kernel_size = kernel_size
@@ -84,6 +119,7 @@ class WatermarkDetector:
         self.watermark_color = watermark_color
         self.protect_text = protect_text
         self.color_tolerance = color_tolerance
+        self.color_weight = color_weight
 
     def detect_watermark_color(self, image_rgb):
         """Detect the dominant watermark color using color analysis.
@@ -133,8 +169,9 @@ class WatermarkDetector:
         Returns:
             Binary mask protecting text areas (255 where text should be protected)
         """
-        # Identify dark regions (typically text) with gray level 0-80
-        _, text_protect = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
+        # Identify dark regions (typically text) with gray level 0-150
+        # Raised from 80 to 150 to better protect gray text while avoiding watermarks at 233
+        _, text_protect = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
 
         # Remove small noise from text protection mask
         kernel_protect = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
@@ -158,7 +195,12 @@ class WatermarkDetector:
             return self._traditional_detect_mask(image_rgb)
 
     def _traditional_detect_mask(self, image_rgb):
-        """Traditional watermark detection using Otsu thresholding and color analysis.
+        """Traditional watermark detection using color analysis and structure validation.
+
+        Uses AND logic when watermark_color is provided:
+        - Color mask is the PRIMARY filter (must match specified color)
+        - Structural mask validates it's not noise
+        - Result: Only pixels that satisfy BOTH conditions are kept
 
         Args:
             image_rgb: Input image in RGB format
@@ -174,64 +216,80 @@ class WatermarkDetector:
             print("Converting image to grayscale...")
 
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
-        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
-        s_channel = hsv[:, :, 1]
 
-        if self.verbose:
-            print("Applying adaptive thresholding for better watermark detection...")
-
-        # Use adaptive thresholding instead of simple Otsu for better results
-        binary = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-        )
-
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
-        )
-
-        if self.verbose:
-            print("Applying morphological operations...")
-
-        # Apply morphological operations to clean up the mask
-        opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
-        mask = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=1)
-
-        # Combine with color-based detection for better watermark isolation
+        # === PRECISE COLOR-BASED MODE ===
         if self.watermark_color is not None:
             if self.verbose:
-                print("Combining with color-based watermark detection...")
+                print(
+                    f"Using precise color-based detection with tolerance {self.color_tolerance}..."
+                )
 
-            # Extract target gray value from watermark color (handle both RGB and BGR)
+            # 1. Create color-based mask (PRIMARY: must match watermark color exactly)
             if (
                 isinstance(self.watermark_color, (tuple, list))
                 and len(self.watermark_color) >= 3
             ):
-                target_gray = int(
-                    np.mean(self.watermark_color[:3])
-                )  # Use first 3 components
+                target_gray = int(np.mean(self.watermark_color[:3]))
             else:
                 target_gray = self.watermark_color[0] if self.watermark_color else 200
 
-            # Create color-based mask: pixels close to watermark color
             color_diff = np.abs(gray.astype(int) - target_gray)
-            color_mask = color_diff < self.color_tolerance  # Dynamic tolerance
+            color_mask = (color_diff < self.color_tolerance).astype(np.uint8) * 255
 
-            # Combine both masks
-            mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
+            if self.verbose:
+                print(
+                    f"Color mask created: targeting gray level {target_gray} "
+                    f"± {self.color_tolerance}"
+                )
 
-        # Always apply adaptive saturation threshold for additional refinement
-        saturation_mean = np.mean(s_channel)
-        saturation_threshold = max(30, int(saturation_mean * 0.6))
-        color_mask = s_channel < saturation_threshold
+            # 2. Create structural mask (validates shape/structure, not noise)
+            binary = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            )
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
+            )
+            structural_mask = cv2.morphologyEx(
+                binary, cv2.MORPH_OPEN, kernel, iterations=1
+            )
 
-        # Combine thresholding and color detection
-        mask = cv2.bitwise_or(mask, color_mask.astype(np.uint8) * 255)
+            # 3. KEY LOGIC: Combine with AND (not OR!)
+            # Result must satisfy BOTH: correct color AND has structure
+            # This eliminates text because text doesn't match the color
+            mask = cv2.bitwise_and(color_mask, structural_mask)
+
+            if self.verbose:
+                print(
+                    "Using AND logic: color AND structure (eliminates text automatically)"
+                )
+
+        # === AUTOMATIC DETECTION MODE (no color specified) ===
+        else:
+            if self.verbose:
+                print("No color specified: Using general detection logic...")
+
+            # Adaptive thresholding is our main tool
+            binary = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            )
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
+            )
+            opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+            mask = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+            # In auto mode, saturation mask can help as supplementary detection
+            hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+            s_channel = hsv[:, :, 1]
+            saturation_mean = np.mean(s_channel)
+            saturation_threshold = max(30, int(saturation_mean * 0.6))
+            saturation_mask = (s_channel < saturation_threshold).astype(np.uint8) * 255
+            mask = cv2.bitwise_or(mask, saturation_mask)
+
+        # === UNIVERSAL POST-PROCESSING (applies to both modes) ===
 
         # Protect white background: exclude very bright areas (>250 gray level)
-        # These are typically document backgrounds, not watermarks
         _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
-        # background_mask is 255 where gray > 250, 0 elsewhere
-        # Set mask to 0 where background_mask is 255 (white areas)
         mask[background_mask == 255] = 0
 
         # Protect dark text regions if enabled
@@ -239,9 +297,6 @@ class WatermarkDetector:
             if self.verbose:
                 print("Protecting dark text regions from removal...")
             text_protect_mask = self.get_text_protect_mask(gray)
-            # Only keep watermark pixels that are NOT in text regions
-            # text_protect_mask is 255 where text exists, 0 elsewhere
-            # We need to exclude (invert) the text regions from watermark mask
             mask = cv2.bitwise_and(mask, cv2.bitwise_not(text_protect_mask))
 
         if self.verbose:

@@ -176,16 +176,30 @@ class DocumentClassifier:
             return DocumentType.MIXED, max(electronic_score, scanned_score) / 2
 
 
-def get_optimal_parameters(doc_type):
+def get_optimal_parameters(doc_type, preset_mode=None):
     """
     根据文档类型获取最优参数配置
 
     Args:
         doc_type: DocumentType枚举值
+        preset_mode: 预设模式 (None, "electronic-color")
 
     Returns:
         dict: 优化后的参数字典
     """
+    # Electronic Color preset: Precise color removal for electronic documents
+    if preset_mode == "electronic-color":
+        return {
+            "color_tolerance": 5,  # Extremely strict color matching
+            "inpaint_strength": 1.0,  # Medium inpaint strength
+            "kernel_size": 2,  # Small kernel for sharp edges
+            "protect_text": True,  # Protect black text
+            "multi_pass": 1,  # Single pass sufficient
+            "dpi": 150,  # Standard DPI for electronic docs
+            "auto_detect_color": False,  # Must specify color manually
+            "color_weight": 2.5,  # Heavily prioritize color-based detection
+        }
+
     if doc_type == DocumentType.ELECTRONIC:
         return {
             "color_tolerance": 18,  # 颜色严格匹配

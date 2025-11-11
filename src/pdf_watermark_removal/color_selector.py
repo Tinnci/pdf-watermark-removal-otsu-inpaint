@@ -33,6 +33,7 @@ class ColorSelector:
 
         Returns:
             Tuple (R, G, B) of selected color or None for auto-detection
+            OR dict with 'color' and 'use_preset' keys if preset mode chosen
         """
         self.console.print(
             "\n[bold cyan]═══════════════════════════════════════════════════════[/bold cyan]"
@@ -115,6 +116,9 @@ class ColorSelector:
 
         self.console.print(Panel(panel_content, border_style="cyan"))
 
+        # Show preset recommendation for electronic documents
+        self._show_preset_recommendation(rgb)
+
         # Show alternatives if available with color table
         # Filter to show watermark and text types only
         alternatives = [
@@ -126,6 +130,32 @@ class ColorSelector:
             self.console.print(f"\n[bold]{t('other_colors')}:[/bold]")
             color_table = ColorPreview.create_color_table(alternatives[:3], i18n_t=t)
             self.console.print(color_table)
+
+    def _show_preset_recommendation(self, rgb):
+        """Show preset mode recommendation for precise color removal.
+
+        Args:
+            rgb: RGB tuple of detected color
+        """
+        r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
+
+        preset_info = Panel(
+            f"[bold cyan]💡 PRESET MODE: Precise Color Removal[/bold cyan]\n\n"
+            f"For electronic documents (not scanned), the\n"
+            f"[yellow]'electronic-color'[/yellow] preset provides:\n\n"
+            f"  ✓ Extremely strict color matching (tolerance: 5)\n"
+            f"  ✓ Removes ONLY the exact color: RGB({r},{g},{b})\n"
+            f"  ✓ Protects text and backgrounds\n"
+            f"  ✓ Optimized for sharp edges\n\n"
+            f"[dim]Perfect for watermarks with a single, consistent color.[/dim]",
+            title="[bold green]Preset Available[/bold green]",
+            border_style="green",
+        )
+        self.console.print("\n")
+        self.console.print(preset_info)
+
+        # Store for later retrieval
+        self._preset_suggestion = {"rgb": (r, g, b), "available": True}
 
     def _display_alternatives_table(self, alternatives):
         """Display alternative colors in a compact table.
@@ -167,6 +197,26 @@ class ColorSelector:
             Selected color or None
         """
         confidence = recommended.get("confidence", 0)
+
+        # Ask about preset mode first if available
+        if hasattr(self, "_preset_suggestion") and self._preset_suggestion["available"]:
+            try:
+                use_preset = click.confirm(
+                    "\nUse 'electronic-color' preset mode for precise removal?",
+                    default=True,
+                )
+                if use_preset:
+                    self.console.print(
+                        "[green]✓ Applying preset parameters for this session...[/green]"
+                    )
+                    r, g, b = self._preset_suggestion["rgb"]
+                    # Return dict indicating preset mode
+                    return {
+                        "color": (r, g, b),
+                        "use_preset": True,
+                    }
+            except (EOFError, click.Abort):
+                pass
 
         # High confidence: Just confirm
         if confidence >= 85:

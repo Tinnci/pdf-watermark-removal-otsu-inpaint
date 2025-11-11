@@ -22,6 +22,9 @@ class WatermarkRemover:
         yolo_model_path="yolov8n-seg.pt",
         yolo_conf_thres=0.25,
         yolo_device="auto",
+        yolo_version="v8",
+        auto_download_model=True,
+        color_weight=1.0,
     ):
         """Initialize the watermark remover.
 
@@ -35,9 +38,12 @@ class WatermarkRemover:
             protect_text: Protect dark text from being removed
             color_tolerance: Color matching tolerance (0-255, default 30)
             detection_method: 'traditional' or 'yolo'
-            yolo_model_path: Path to YOLOv8 model
-            yolo_conf_thres: YOLOv8 confidence threshold
-            yolo_device: YOLOv8 device ('cpu', 'cuda', 'auto')
+            yolo_model_path: Path to YOLO model
+            yolo_conf_thres: YOLO confidence threshold
+            yolo_device: YOLO device ('cpu', 'cuda', 'auto')
+            yolo_version: 'v8', 'v11', or 'v11' (default: v8)
+            auto_download_model: Automatically download YOLO model if not found
+            color_weight: Weight for color-based detection (1.0=normal, 2.5=high priority)
         """
         self.detector = WatermarkDetector(
             kernel_size=kernel_size,
@@ -50,6 +56,9 @@ class WatermarkRemover:
             yolo_model_path=yolo_model_path,
             yolo_conf_thres=yolo_conf_thres,
             yolo_device=yolo_device,
+            yolo_version=yolo_version,
+            auto_download_model=auto_download_model,
+            color_weight=color_weight,
         )
         self.inpaint_radius = inpaint_radius
         self.inpaint_strength = inpaint_strength

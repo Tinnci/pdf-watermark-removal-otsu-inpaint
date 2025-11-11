@@ -2,6 +2,7 @@
 
 import sys
 import os
+from pathlib import Path
 
 import numpy as np
 import click
@@ -24,6 +25,57 @@ from .document_classifier import DocumentClassifier, get_optimal_parameters
 
 
 console = Console()
+
+
+def validate_yolo_setup(detection_method, yolo_model, verbose):
+    """Validate YOLO dependencies and model availability.
+
+    Args:
+        detection_method: Detection method ('traditional' or 'yolo')
+        yolo_model: Path to YOLO model file
+        verbose: Verbose logging
+
+    Raises:
+        click.Abort: If YOLO is requested but not available or misconfigured
+    """
+    if detection_method != "yolo":
+        return
+
+    # Check if ultralytics is installed
+    try:
+        from ultralytics import YOLO  # noqa: F401
+
+        if verbose:
+            console.print("[dim]✓ Ultralytics available[/dim]")
+    except ImportError:
+        console.print(
+            Panel(
+                "[red]YOLO detection requires additional dependencies:[/red]\n\n"
+                "[yellow]  pip install pdf-watermark-removal-otsu-inpaint[yolo][/yellow]\n\n"
+                "[dim]Or install manually:[/dim]\n"
+                "[yellow]  pip install ultralytics>=8.3.0[/yellow]",
+                title="[bold red]✗ YOLO Not Available[/bold red]",
+                border_style="red",
+            )
+        )
+        raise click.Abort()
+
+    # Check if model file exists (unless it's a model name that will be auto-downloaded)
+    model_path = Path(yolo_model)
+    is_model_name = yolo_model in ("yolov8n-seg.pt", "yolo12n-seg.pt")
+
+    if not is_model_name and not model_path.exists():
+        console.print(
+            Panel(
+                f"[red]YOLO model file not found: {yolo_model}[/red]\n\n"
+                "[dim]Default models will be auto-downloaded on first use:[/dim]\n"
+                "[yellow]  yolov8n-seg.pt (6.2 MB)[/yellow]\n"
+                "[yellow]  yolo12n-seg.pt (5.1 MB)[/yellow]\n\n"
+                "[dim]Or provide a custom model path.[/dim]",
+                title="[bold yellow]⚠ Model Will Be Auto-Downloaded[/bold yellow]",
+                border_style="yellow",
+            )
+        )
 
 
 def parse_pages(pages_str):
@@ -80,8 +132,8 @@ def parse_color(color_str):
 
 
 @click.command()
-@click.argument("input_pdf", type=click.Path(exists=True))
-@click.argument("output_pdf", type=click.Path())
+@click.argument("input_pdf", type=click.Path(exists=True), required=False)
+@click.argument("output_pdf", type=click.Path(), required=False)
 @click.option(
     "--kernel-size",
     default=3,
@@ -170,25 +222,37 @@ def parse_color(color_str):
     "--detection-method",
     default="traditional",
     type=click.Choice(["traditional", "yolo"]),
-    help="Watermark detection method (traditional=fast, yolo=accurate)",
+    help="Detection method: 'traditional'=fast+lightweight (default), 'yolo'=accurate+slower (requires ultralytics)",
 )
 @click.option(
     "--yolo-model",
     default="yolov8n-seg.pt",
     type=click.Path(exists=False),
-    help="Path to YOLOv8-seg model (.pt or .onnx)",
+    help="YOLO model: 'yolov8n-seg.pt' (fast), 'yolov12n-seg.pt' (balanced), 'yolo11x-watermark.pt' (specialized), or custom path",
 )
 @click.option(
     "--yolo-conf",
     default=0.25,
     type=float,
-    help="YOLOv8 confidence threshold (0-1)",
+    help="YOLO confidence threshold 0-1 (lower=more detections). For YOLO detection only.",
 )
 @click.option(
     "--yolo-device",
     default="auto",
     type=click.Choice(["auto", "cpu", "cuda"]),
-    help="Device for YOLOv8 inference",
+    help="Device for YOLO inference",
+)
+@click.option(
+    "--yolo-version",
+    default="v8",
+    type=click.Choice(["v8", "v12", "v11"]),
+    help="YOLO version for detection (v8=fast, v12=accurate, v11=specialized watermark detection)",
+)
+@click.option(
+    "--preset",
+    default=None,
+    type=click.Choice(["electronic-color"]),
+    help="Preset mode: 'electronic-color' for precise color removal on electronic documents (requires --color)",
 )
 @click.option(
     "--lang",
@@ -201,6 +265,11 @@ def parse_color(color_str):
     "-v",
     is_flag=True,
     help="Enable verbose output",
+)
+@click.option(
+    "--list-models",
+    is_flag=True,
+    help="List available YOLO models and exit",
 )
 def main(
     input_pdf,
@@ -223,24 +292,100 @@ def main(
     yolo_model,
     yolo_conf,
     yolo_device,
+    yolo_version,
+    preset,
     lang,
     verbose,
+    list_models,
 ):
     """Remove watermarks from PDF using Otsu threshold and inpaint."""
     try:
+        # Handle preset mode validation
+        if preset == "electronic-color":
+            if not color:
+                console.print(
+                    Panel(
+                        "[red]Preset 'electronic-color' requires --color to be specified.[/red]\n\n"
+                        "[yellow]Example:[/yellow]\n"
+                        "  pdf-watermark-removal input.pdf output.pdf --preset electronic-color --color '200,200,200'\n\n"
+                        "[dim]This preset is optimized for precise watermark color removal on electronic documents.[/dim]",
+                        title="[bold red]Missing Required Parameter[/bold red]",
+                        border_style="red",
+                    )
+                )
+                raise click.Abort()
+
+            # Force traditional detection method for color-based preset
+            if detection_method != "traditional":
+                if verbose:
+                    console.print(
+                        "[yellow]⚠ Preset 'electronic-color' requires traditional detection method. Switching...[/yellow]"
+                    )
+                detection_method = "traditional"
+
+        # Handle model listing
+        if list_models:
+            from .model_manager import ModelManager
+
+            manager = ModelManager(verbose=True)
+            manager.list_available_models()
+            return
+
+        # Validate required arguments
+        if not input_pdf or not output_pdf:
+            console.print(
+                "[red]Error: INPUT_PDF and OUTPUT_PDF are required unless using --list-models[/red]"
+            )
+            raise click.MissingParameter("input_pdf or output_pdf")
+
         # Set language
         if lang:
             set_language(lang)
+
+        # Validate YOLO setup before processing
+        validate_yolo_setup(detection_method, yolo_model, verbose)
 
         # Initialize stats
         stats = ProcessingStats(verbose=verbose)
 
         # Display header
+        config_text = f"[bold cyan]{t('title')}[/bold cyan]\n"
+        config_text += f"[yellow]Input:[/yellow]  {input_pdf}\n"
+        config_text += f"[yellow]Output:[/yellow] {output_pdf}"
+
+        # Add detection method info
+        if detection_method == "yolo":
+            version_display = f"YOLO{yolo_version.upper()}-seg"
+            if yolo_version == "v12":
+                accuracy = "Higher accuracy"
+                actual_model = "yolov12n-seg.pt"  # Fixed: yolov12 not yolo12
+            elif yolo_version == "v11":
+                accuracy = "Specialized watermark detection"
+                actual_model = "yolo11x-watermark.pt"
+            else:
+                accuracy = "Fast baseline"
+                actual_model = "yolov8n-seg.pt"
+
+            # Use actual model if default was provided
+            display_model = (
+                actual_model if yolo_model == "yolov8n-seg.pt" else yolo_model
+            )
+
+            config_text += (
+                f"\n[yellow]Detection:[/yellow] {version_display} ({accuracy})"
+            )
+            config_text += (
+                f"\n[dim]  Model: {display_model} | Confidence: {yolo_conf} | "
+                f"Device: {yolo_device}[/dim]"
+            )
+        else:
+            config_text += (
+                "\n[yellow]Detection:[/yellow] Traditional CV (fast, no dependencies)"
+            )
+
         console.print(
             Panel(
-                f"[bold cyan]{t('title')}[/bold cyan]\n"
-                f"[yellow]Input:[/yellow]  {input_pdf}\n"
-                f"[yellow]Output:[/yellow] {output_pdf}",
+                config_text,
                 title="[bold]Configuration[/bold]",
                 border_style="cyan",
             )
@@ -256,8 +401,12 @@ def main(
 
         processor = PDFProcessor(dpi=dpi, verbose=verbose)
 
-        # Interactive color selection for first page only
-        if not auto_color and not watermark_color:
+        # Initialize color_weight (will be updated if preset is used)
+        color_weight = 1.0
+
+        # Interactive color selection only needed for traditional method
+        use_interactive_preset = False
+        if detection_method == "traditional" and not auto_color and not watermark_color:
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -269,9 +418,19 @@ def main(
 
             if first_page_images:
                 selector = ColorSelector(verbose=verbose)
-                watermark_color = selector.get_color_for_detection(
+                color_result = selector.get_color_for_detection(
                     first_page_images[0], auto_detect=False
                 )
+
+                # Check if user chose preset mode interactively
+                if isinstance(color_result, dict) and color_result.get("use_preset"):
+                    watermark_color = color_result["color"]
+                    use_interactive_preset = True
+                    console.print(
+                        "[bold green]✓ Electronic-color preset activated![/bold green]"
+                    )
+                else:
+                    watermark_color = color_result
 
         # Initialize remover with detected/selected color
         remover = WatermarkRemover(
@@ -283,11 +442,15 @@ def main(
             watermark_color=watermark_color,
             protect_text=protect_text,
             color_tolerance=color_tolerance,
-            # YOLOv8 parameters
+            # YOLO parameters
             detection_method=detection_method,
             yolo_model_path=yolo_model,
             yolo_conf_thres=yolo_conf,
             yolo_device=yolo_device,
+            yolo_version=yolo_version,
+            auto_download_model=True,
+            # Color weight for preset mode
+            color_weight=color_weight,
         )
 
         # Display strength configuration if requested
@@ -326,6 +489,48 @@ def main(
         # Auto-classify document type and optimize parameters (enabled by default)
         auto_classify = not no_auto_classify  # Invert the flag
         classification = None
+
+        # Apply preset parameters if specified via CLI flag OR interactively chosen
+        if preset == "electronic-color" or use_interactive_preset:
+            preset_params = get_optimal_parameters(None, preset_mode="electronic-color")
+
+            console.print(
+                "[dim]🎯 Preset mode: ELECTRONIC-COLOR "
+                "(precise color removal) → Optimized[/dim]"
+            )
+
+            # Apply preset parameters (these override defaults but not user-specified values)
+            applied_params = []
+
+            if color_tolerance == 30:  # Default value
+                color_tolerance = preset_params["color_tolerance"]
+                applied_params.append(f"color_tolerance={color_tolerance}")
+
+            if inpaint_strength == 1.0:  # Default value
+                inpaint_strength = preset_params["inpaint_strength"]
+                applied_params.append(f"inpaint_strength={inpaint_strength}")
+
+            if kernel_size == 3:  # Default value
+                kernel_size = preset_params["kernel_size"]
+                applied_params.append(f"kernel_size={kernel_size}")
+
+            if multi_pass == 1:  # Default value
+                multi_pass = preset_params["multi_pass"]
+                applied_params.append(f"multi_pass={multi_pass}")
+
+            if dpi == 150:  # Default value
+                dpi = preset_params["dpi"]
+                applied_params.append(f"dpi={dpi}")
+
+            # Apply color weight from preset
+            color_weight = preset_params.get("color_weight", 1.0)
+            applied_params.append(f"color_weight={color_weight}")
+
+            if applied_params and verbose:
+                console.print(f"[dim]   └─ Applied: {', '.join(applied_params)}[/dim]")
+
+            # Disable auto-classify when using preset
+            auto_classify = False
 
         if auto_classify and images:
             classifier = DocumentClassifier(verbose=verbose)

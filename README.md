@@ -64,6 +64,18 @@ uv tool install pdf-watermark-removal-otsu-inpaint
 pip install pdf-watermark-removal-otsu-inpaint
 ```
 
+### With YOLO Detection Support
+
+For using YOLO-based watermark detection (more accurate on complex watermarks):
+
+```bash
+# YOLO support (CPU only)
+pip install pdf-watermark-removal-otsu-inpaint[yolo]
+
+# YOLO with GPU acceleration (requires PyTorch and CUDA)
+pip install pdf-watermark-removal-otsu-inpaint[yolo-gpu]
+```
+
 ### From local directory
 
 ```bash
@@ -86,6 +98,21 @@ pdf-watermark-removal input.pdf output.pdf --color "200,200,200"
 ```
 
 The color format is R,G,B with values from 0-255.
+
+### Preset Mode: Electronic Documents with Precise Color Removal
+
+For electronic documents (PDFs generated from software, not scanned), use the `electronic-color` preset for optimal precise color removal:
+
+```bash
+pdf-watermark-removal input.pdf output.pdf --preset electronic-color --color "200,200,200"
+```
+
+This preset:
+- Uses **extremely strict color matching** (tolerance: 5) - only removes the exact color specified
+- Optimized for electronic documents with discrete colors and sharp edges
+- Protects black text and white backgrounds
+- Uses traditional method (no YOLO required)
+- Perfect for removing watermarks of a specific color without affecting other content
 
 ### Skip Interactive Selection
 
@@ -136,10 +163,22 @@ OPTIONS:
                              Lower=stricter matching
   --protect-text              Protect dark text from removal (default: True)
   
+  --preset                    Preset mode: 'electronic-color' for precise color
+                             removal on electronic documents (requires --color)
   --no-auto-classify          Disable automatic document type detection
   --show-strength             Display per-page strength parameters
   --debug-mask                Save debug preview of watermark detection
   --skip-errors               Skip pages with errors instead of failing
+  
+  --detection-method          Detection method: 'traditional' or 'yolo'
+                             (default: traditional)
+  --yolo-model PATH          Path to YOLO segmentation model (.pt or .onnx)
+                             (default: yolov8n-seg.pt)
+  --yolo-conf FLOAT          YOLO confidence threshold 0-1 (default: 0.25)
+  --yolo-device              YOLO device: 'cpu', 'cuda', or 'auto'
+                             (default: auto)
+  --yolo-version             YOLO version: 'v8' or 'v12' (default: v8)
+                             v8=fast baseline, v12=higher accuracy
   
   --lang TEXT                 Force language (zh_CN, en_US)
                              Auto-detect if not specified
@@ -178,6 +217,47 @@ pdf-watermark-removal large_document.pdf output.pdf --skip-errors
 # Process subset of pages only
 pdf-watermark-removal input.pdf output.pdf --pages 1-50 --skip-errors
 ```
+
+### YOLO-Based Detection (Accurate for Complex Watermarks)
+```bash
+# Use YOLOv8-seg for detection (fast baseline)
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo
+
+# Use YOLO12-seg for detection (higher accuracy, slightly slower)
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-version v12
+
+# Use specialized watermark model (maximum accuracy)
+pdf-watermark-removal input.pdf output.pdf \
+  --detection-method yolo \
+  --yolo-version v11
+
+# YOLO with GPU acceleration
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-device cuda
+
+# YOLO with lower confidence threshold (detect more regions)
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-conf 0.15
+
+# YOLO v11 with aggressive detection (recommended for complex watermarks)
+pdf-watermark-removal input.pdf output.pdf \
+  --detection-method yolo \
+  --yolo-version v11 \
+  --yolo-conf 0.10 \
+  --yolo-device cpu
+
+# YOLO with custom model and confidence
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo \
+  --yolo-model "/path/to/custom-model.pt" \
+  --yolo-conf 0.30
+
+# List available models
+pdf-watermark-removal --list-models
+```
+
+**Confidence Threshold Guide**:
+- `--yolo-conf 0.25` (default): Balanced detection, fewer false positives
+- `--yolo-conf 0.15`: More aggressive, detects subtle watermarks
+- `--yolo-conf 0.10`: Very aggressive, catches thin/faint watermarks
+- `--yolo-conf 0.05`: Maximum sensitivity, may detect noise
 
 ## How It Works
 
@@ -249,6 +329,99 @@ Preserves document fidelity:
 - Maintains original page layout
 - Preserves resolution based on input DPI
 - Reconstructs from processed image sequence
+
+## Detection Methods
+
+### Traditional CV (Default)
+Fast, lightweight detection using adaptive thresholding and color analysis:
+- **Speed**: ~100-200ms per page (CPU)
+- **Accuracy**: 85-95% for standard watermarks
+- **Requirements**: opencv-python, numpy
+- **Best for**: Simple, uniform watermarks; fast processing
+
+### YOLO-based Detection (Experimental)
+Deep learning-based instance segmentation for complex watermarks:
+
+#### YOLOv8 (Fast Baseline)
+```bash
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo
+```
+- **Speed**: ~500-1000ms per page (CPU), ~100-200ms (GPU)
+- **Accuracy**: 90-98% for complex/semi-transparent watermarks
+- **Model**: yolov8n-seg.pt (6.7 MB)
+- **Parameters**: 3.2M
+- **Best for**: Mixed content, semi-transparent, overlapping watermarks
+
+#### YOLO12 (Higher Accuracy)
+```bash
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-version v12
+```
+- **Speed**: ~600-1200ms per page (CPU), ~120-250ms (GPU)
+- **Accuracy**: 92-99% with region attention mechanism
+- **Model**: yolo12n-seg.pt (6.5 MB)
+- **Parameters**: 2.6M (lighter)
+- **Architecture**: Region Attention + R-ELAN (better for small/complex patterns)
+- **Best for**: Complex documents, small watermarks, multi-scale patterns
+
+#### YOLO11 XLarge (Specialized Watermark Detection) ⭐
+```bash
+pdf-watermark-removal input.pdf output.pdf \
+  --detection-method yolo \
+  --yolo-model yolo11x-watermark.pt
+```
+- **Speed**: ~2-3 seconds per page (CPU), ~500ms-1s (GPU)
+- **Model**: yolo11x-watermark.pt (101 MB) - Large specialized segmentation model
+- **Training**: Trained specifically on watermark detection dataset
+- **Best for**: Complex watermark patterns, high-precision detection
+- **⚠️ Trade-offs**: Larger model (101 MB), slower inference, requires more resources
+- **Advantage**: Detects and segments watermark regions (not just classifies)
+
+**When to use**:
+- Maximum precision watermark detection and segmentation
+- Production systems with complex/diverse watermarks
+- When processing time is not critical
+- With GPU acceleration for reasonable speed
+
+#### Quick Selection Guide
+
+| Use Case | Model | Speed | Disk |
+|----------|-------|-------|------|
+| Fast processing | yolov8n-seg.pt | ⚡⚡⚡ | ✓✓✓ |
+| Balanced | yolov12n-seg.pt | ⚡⚡ | ✓✓✓ |
+| Best accuracy | yolo11x-watermark.pt | ⚡ | ✓ |
+
+**Quick Recommendations**:
+- 📱 **Default/Fast**: Use `yolov8n-seg.pt` (balanced speed and accuracy)
+- ⚡ **Balanced**: Use `yolov12n-seg.pt` (better accuracy, slightly slower)
+- 🎯 **Maximum Accuracy**: Use `yolo11x-watermark.pt` (specialized, requires GPU)
+
+---
+
+## Fine-Tuning YOLO Detection
+
+### Confidence Threshold (--yolo-conf)
+
+The `--yolo-conf` parameter controls detection sensitivity (0.0-1.0):
+
+```bash
+# Default: 0.25 - Good balance
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo
+
+# 0.15 - More aggressive detection
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-conf 0.15
+
+# 0.10 - Very aggressive (catches faint watermarks)
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-conf 0.10
+
+# 0.05 - Maximum sensitivity (may include noise)
+pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-conf 0.05
+```
+
+**Recommendations**:
+- **Faint/Thin watermarks**: Use `0.10-0.15`
+- **Standard watermarks**: Use default `0.25`
+- **Heavy watermarks**: Use `0.30-0.50`
+- **Testing**: Start with `0.25`, adjust based on results
 
 ## Requirements
 

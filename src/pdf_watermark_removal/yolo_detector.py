@@ -1,9 +1,10 @@
-"""YOLOv8 instance segmentation for watermark detection."""
+"""Universal YOLO detector supporting v8 and v12 for watermark detection."""
 
 import cv2
 import numpy as np
 from pathlib import Path
 from typing import Tuple
+from enum import Enum
 
 try:
     from ultralytics import YOLO
@@ -20,7 +21,15 @@ except ImportError:
     ONNX_AVAILABLE = False
 
 
-class YOLOv8WatermarkDetector:
+class YOLOVersion(Enum):
+    """YOLO version selection."""
+
+    V8 = "v8"
+    V12 = "v12"
+    V11 = "v11"
+
+
+class YOLOWatermarkDetector:
     """YOLOv8-based watermark detector optimized for edge deployment."""
 
     def __init__(
@@ -31,8 +40,9 @@ class YOLOv8WatermarkDetector:
         device: str = "cpu",
         use_onnx: bool = True,
         verbose: bool = False,
+        version: YOLOVersion = YOLOVersion.V8,
     ):
-        """Initialize YOLOv8 watermark detector.
+        """Initialize YOLO watermark detector supporting v8 and v12.
 
         Args:
             model_path: Path to model (.pt or .onnx)
@@ -41,12 +51,14 @@ class YOLOv8WatermarkDetector:
             device: Inference device ('cpu', 'cuda', 'auto')
             use_onnx: Use ONNX Runtime if available
             verbose: Enable verbose logging
+            version: YOLOVersion.V8, YOLOVersion.V12, or YOLOVersion.V11 (default: V8)
         """
         if not YOLO_AVAILABLE:
             raise ImportError(
-                "ultralytics not installed. Install with: pip install ultralytics"
+                "ultralytics not installed. Install with: pip install ultralytics>=8.3.0"
             )
 
+        self.version = version
         self.conf_thres = conf_thres
         self.iou_thres = iou_thres
         self.verbose = verbose
@@ -58,6 +70,21 @@ class YOLOv8WatermarkDetector:
         # Model cache directory
         self.model_cache = Path.home() / ".pdf_watermark" / "models"
         self.model_cache.mkdir(parents=True, exist_ok=True)
+
+        # Auto-resolve model path based on version if needed
+        if model_path == "yolov8n-seg.pt":
+            if version == YOLOVersion.V12:
+                model_path = "yolov12n-seg.pt"
+                if self.verbose:
+                    print(
+                        f"[YOLO] Auto-switched to {version.value} model: {model_path}"
+                    )
+            elif version == YOLOVersion.V11:
+                model_path = "yolo11x-watermark.pt"
+                if self.verbose:
+                    print(
+                        f"[YOLO] Auto-switched to {version.value} model: {model_path}"
+                    )
 
         # Load model
         model_path = str(model_path)
@@ -82,7 +109,9 @@ class YOLOv8WatermarkDetector:
             self.model = YOLO(model_path)
             self.model.fuse()  # Model fusion for acceleration
             if self.verbose:
-                print(f"[YOLOv8] Loaded PyTorch model: {model_path}")
+                print(
+                    f"[YOLO{self.version.value.upper()}] Loaded PyTorch model: {model_path}"
+                )
         except Exception as e:
             raise RuntimeError(f"Failed to load YOLO model: {e}")
 
@@ -90,7 +119,9 @@ class YOLOv8WatermarkDetector:
         """Load ONNX Runtime model."""
         if not ONNX_AVAILABLE:
             if self.verbose:
-                print("[YOLOv8] ONNX not available, falling back to PyTorch")
+                print(
+                    f"[YOLO{self.version.value.upper()}] ONNX not available, falling back to PyTorch"
+                )
             self._load_torch_model(model_path.replace(".onnx", ".pt"))
             return
 
@@ -104,8 +135,12 @@ class YOLOv8WatermarkDetector:
             self.output_names = [out.name for out in self.session.get_outputs()]
 
             if self.verbose:
-                print(f"[YOLOv8] Loaded ONNX model: {model_path}")
-                print(f"[YOLOv8] Providers: {self.session.get_providers()}")
+                print(
+                    f"[YOLO{self.version.value.upper()}] Loaded ONNX model: {model_path}"
+                )
+                print(
+                    f"[YOLO{self.version.value.upper()}] Providers: {self.session.get_providers()}"
+                )
         except Exception as e:
             raise RuntimeError(f"Failed to load ONNX model: {e}")
 
@@ -214,7 +249,7 @@ class YOLOv8WatermarkDetector:
         return combined_mask
 
     def detect_watermark_mask(self, image_rgb: np.ndarray) -> np.ndarray:
-        """Detect watermark mask using YOLOv8.
+        """Detect watermark mask using YOLO.
 
         Args:
             image_rgb: Input image in RGB format
@@ -223,7 +258,7 @@ class YOLOv8WatermarkDetector:
             Binary watermark mask (0/255)
         """
         if self.verbose:
-            print("[YOLOv8] Detecting watermark...")
+            print(f"[YOLO{self.version.value.upper()}] Detecting watermark...")
 
         # Preprocess
         input_tensor, scale, pad_w, pad_h = self.preprocess(image_rgb)
@@ -252,7 +287,9 @@ class YOLOv8WatermarkDetector:
 
         if self.verbose:
             coverage = np.count_nonzero(mask) / (mask.shape[0] * mask.shape[1]) * 100
-            print(f"[YOLOv8] Watermark coverage: {coverage:.2f}%")
+            print(
+                f"[YOLO{self.version.value.upper()}] Watermark coverage: {coverage:.2f}%"
+            )
 
         return mask
 
@@ -271,3 +308,7 @@ class YOLOv8WatermarkDetector:
         )
         refined = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
         return refined
+
+
+# Backward compatibility alias
+YOLOv8WatermarkDetector = YOLOWatermarkDetector
