@@ -8,18 +8,19 @@ from collections import Counter
 class WatermarkDetector:
     """Detects watermarks using Otsu threshold segmentation and color analysis."""
 
-    def __init__(self, kernel_size=3, verbose=False, auto_detect_color=True):
+    def __init__(self, kernel_size=3, verbose=False, auto_detect_color=True, watermark_color=None):
         """Initialize the watermark detector.
 
         Args:
             kernel_size: Size of morphological kernel
             verbose: Enable verbose logging
             auto_detect_color: Automatically detect watermark color
+            watermark_color: Explicit watermark color (R, G, B) or None for auto-detection
         """
         self.kernel_size = kernel_size
         self.verbose = verbose
         self.auto_detect_color = auto_detect_color
-        self.watermark_color = None
+        self.watermark_color = watermark_color
 
     def detect_watermark_color(self, image_rgb):
         """Detect the dominant watermark color using color analysis.

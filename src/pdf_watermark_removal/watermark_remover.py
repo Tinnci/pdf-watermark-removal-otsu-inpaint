@@ -8,7 +8,7 @@ from .watermark_detector import WatermarkDetector
 class WatermarkRemover:
     """Removes watermarks from images using inpainting."""
 
-    def __init__(self, kernel_size=3, inpaint_radius=2, verbose=False, auto_detect_color=True):
+    def __init__(self, kernel_size=3, inpaint_radius=2, verbose=False, auto_detect_color=True, watermark_color=None):
         """Initialize the watermark remover.
 
         Args:
@@ -16,8 +16,14 @@ class WatermarkRemover:
             inpaint_radius: Radius for inpainting algorithm
             verbose: Enable verbose logging
             auto_detect_color: Automatically detect watermark color
+            watermark_color: Explicit watermark color (R, G, B) or None for auto-detection
         """
-        self.detector = WatermarkDetector(kernel_size=kernel_size, verbose=verbose, auto_detect_color=auto_detect_color)
+        self.detector = WatermarkDetector(
+            kernel_size=kernel_size,
+            verbose=verbose,
+            auto_detect_color=auto_detect_color,
+            watermark_color=watermark_color
+        )
         self.inpaint_radius = inpaint_radius
         self.verbose = verbose
 
