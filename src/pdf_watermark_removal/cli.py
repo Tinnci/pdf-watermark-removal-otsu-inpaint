@@ -167,6 +167,30 @@ def parse_color(color_str):
     help="Disable automatic document type detection",
 )
 @click.option(
+    "--detection-method",
+    default="traditional",
+    type=click.Choice(["traditional", "yolo"]),
+    help="Watermark detection method (traditional=fast, yolo=accurate)",
+)
+@click.option(
+    "--yolo-model",
+    default="yolov8n-seg.pt",
+    type=click.Path(exists=False),
+    help="Path to YOLOv8-seg model (.pt or .onnx)",
+)
+@click.option(
+    "--yolo-conf",
+    default=0.25,
+    type=float,
+    help="YOLOv8 confidence threshold (0-1)",
+)
+@click.option(
+    "--yolo-device",
+    default="auto",
+    type=click.Choice(["auto", "cpu", "cuda"]),
+    help="Device for YOLOv8 inference",
+)
+@click.option(
     "--lang",
     default=None,
     type=str,
@@ -195,6 +219,10 @@ def main(
     skip_errors,
     show_strength,
     no_auto_classify,
+    detection_method,
+    yolo_model,
+    yolo_conf,
+    yolo_device,
     lang,
     verbose,
 ):
@@ -255,6 +283,11 @@ def main(
             watermark_color=watermark_color,
             protect_text=protect_text,
             color_tolerance=color_tolerance,
+            # YOLOv8 parameters
+            detection_method=detection_method,
+            yolo_model_path=yolo_model,
+            yolo_conf_thres=yolo_conf,
+            yolo_device=yolo_device,
         )
 
         # Display strength configuration if requested
