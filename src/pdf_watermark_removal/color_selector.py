@@ -5,6 +5,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from .color_analyzer import ColorAnalyzer
+from .stats import ColorPreview
+from .i18n import t
 
 
 class ColorSelector:
@@ -65,21 +67,22 @@ class ColorSelector:
         confidence_bar = "=" * filled + "-" * empty
         confidence_color = "green" if confidence >= 85 else "yellow" if confidence >= 70 else "red"
 
-        # Format recommendation panel
+        # Format recommendation panel with color preview
         panel_content = f"""
-[bold cyan]Recommended Watermark Color:[/bold cyan]
+[bold cyan]{t('recommended_color')}:[/bold cyan]
 
-[bold]RGB:[/bold] {rgb}  [bold]Gray:[/bold] {gray}  [bold]Coverage:[/bold] {coverage:.1f}%
+[bold]{t('rgb_value')}:[/bold] {rgb}  [bold]{t('gray_level')}:[/bold] {gray}  [bold]{t('coverage')}:[/bold] {coverage:.1f}%
 
-[bold]Confidence:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%
-(based on grayscale clustering analysis)
+[bold]{t('confidence')}:[/bold] [{confidence_color}]{confidence_bar}[/{confidence_color}] {confidence}%
+
+{ColorPreview.create_comparison(rgb, "High" if coverage > 80 else "Medium")}
 """
 
         self.console.print(Panel(panel_content, border_style="cyan"))
 
         # Show alternatives if available
         if len(all_colors) > 1:
-            self.console.print("\n[dim]Other detected colors:[/dim]")
+            self.console.print(f"\n[dim]{t('other_colors')}:[/dim]")
             self._display_alternatives_table(all_colors[1:4])
 
     def _display_alternatives_table(self, alternatives):

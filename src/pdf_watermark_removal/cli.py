@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+import os
 
 import click
 from rich.console import Console
@@ -12,6 +13,8 @@ from rich.style import Style
 from .pdf_processor import PDFProcessor
 from .watermark_remover import WatermarkRemover
 from .color_selector import ColorSelector
+from .stats import ProcessingStats, ColorPreview
+from .i18n import get_system_locale, set_language, t
 
 
 console = Console()
@@ -110,24 +113,30 @@ def parse_color(color_str):
     help="Skip interactive color selection, use automatic detection",
 )
 @click.option(
+    "--lang",
+    default=None,
+    type=str,
+    help="Language (zh_CN, en_US). Auto-detect if not specified.",
+)
+@click.option(
     "--verbose",
     "-v",
     is_flag=True,
     help="Enable verbose output",
 )
-def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, dpi, color, auto_color, verbose):
-    """Remove watermarks from PDF using Otsu threshold and inpaint.
-
-    INPUT_PDF: Path to input PDF file
-    OUTPUT_PDF: Path to output PDF file
-    
-    By default, processes all pages. Use --pages to process specific pages.
-    By default, offers interactive color selection. Use --auto-color to skip.
-    """
+def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, dpi, color, auto_color, lang, verbose):
+    """Remove watermarks from PDF using Otsu threshold and inpaint."""
     try:
+        # Set language
+        if lang:
+            set_language(lang)
+        
+        # Initialize stats
+        stats = ProcessingStats(verbose=verbose)
+        
         # Display header
         console.print(Panel(
-            "[bold cyan]PDF Watermark Removal Tool[/bold cyan]\n"
+            f"[bold cyan]{t('title')}[/bold cyan]\n"
             f"[yellow]Input:[/yellow]  {input_pdf}\n"
             f"[yellow]Output:[/yellow] {output_pdf}",
             title="[bold]Configuration[/bold]",
@@ -151,7 +160,7 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
                 TextColumn("[progress.description]{task.description}"),
                 transient=True
             ) as progress:
-                task = progress.add_task("[cyan]Loading first page...", total=None)
+                task = progress.add_task(f"[cyan]{t('loading_pdf')}...", total=None)
                 first_page_images = processor.pdf_to_images(input_pdf, pages=[1])
                 progress.stop_task(task)
 
@@ -224,17 +233,19 @@ def main(input_pdf, output_pdf, kernel_size, inpaint_radius, pages, multi_pass, 
             TextColumn("[progress.description]{task.description}"),
             transient=True
         ) as progress:
-            task = progress.add_task("[cyan]Saving PDF", total=None)
+            task = progress.add_task(f"[cyan]{t('saving_pdf')}", total=None)
             processor.images_to_pdf(processed_images, output_pdf)
             progress.stop_task(task)
 
-        # Success message
-        console.print(Panel(
-            f"[green]Watermark removal completed successfully![/green]\n"
-            f"[cyan]Output saved to:[/cyan] [bold yellow]{output_pdf}[/bold yellow]",
-            title="[bold green]Success[/bold green]",
-            border_style="green"
-        ))
+        # Update stats
+        stats.pages_processed = len(processed_images)
+        if watermark_color:
+            stats.set_watermark_color(watermark_color, coverage=100.0)
+        output_size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
+        stats.set_output(output_pdf, output_size_mb)
+        
+        # Display statistics
+        stats.display_summary(i18n_t=t)
 
     except FileNotFoundError as e:
         console.print(Panel(f"[red]{e}[/red]", title="[bold red]Error[/bold red]", border_style="red"))
