@@ -369,7 +369,7 @@ class WatermarkDetector:
         else:
             if progress and task_id:
                 progress.update(task_id, description=f"[yellow]Page {page_num}: Color analysis...")
-            watermark_mask = self._traditional_detect_mask(image_rgb)
+            watermark_mask = self._traditional_detect_mask(image_rgb, page_num, progress, task_id)
 
         # Then detect and add QR codes if enabled
         if self.detect_qr_codes:
@@ -386,6 +386,11 @@ class WatermarkDetector:
                 # Combine: watermark_mask OR qr_mask_dilated
                 # This ensures QR codes are removed even if text protection would preserve them
                 watermark_mask = cv2.bitwise_or(watermark_mask, qr_mask_dilated)
+
+        # Always complete progress tracking
+        if progress and task_id:
+            progress.update(task_id, description=f"[green]✓ Page {page_num}: Detection complete")
+            progress.update(task_id, completed=100)
 
         return watermark_mask
 
@@ -505,21 +510,29 @@ class WatermarkDetector:
         )
         return closed_mask
 
-    def _traditional_detect_mask(self, image_rgb):
+    def _traditional_detect_mask(self, image_rgb, page_num=1, progress=None, task_id=None):
         """Traditional watermark detection using color analysis and structure validation.
 
         Args:
             image_rgb: Input image in RGB format
+            page_num: Page number (1-indexed) for tracking
+            progress: Rich progress instance for updates
+            task_id: Progress task ID for updates
 
         Returns:
             Binary mask of detected watermark regions
         """
         if self.auto_detect_color and self.watermark_color is None:
+            if progress and task_id:
+                progress.update(task_id, description=f"[yellow]Page {page_num}: Auto-detecting color...")
             self.detect_watermark_color(image_rgb)
 
         if self.verbose:
             print("Converting image to grayscale...")
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+
+        if progress and task_id:
+            progress.update(task_id, description=f"[yellow]Page {page_num}: Analyzing structure...")
 
         if self.watermark_color is not None:
             mask = self._precise_color_based_detection(image_rgb, gray)
