@@ -155,25 +155,39 @@ class WatermarkDetector:
 
         return None
 
-    def get_text_protect_mask(self, gray):
+    def get_text_protect_mask(self, gray, watermark_mask=None, expand_pixels=3):
         """Create a mask to protect dark text regions from being removed.
 
         Args:
             gray: Grayscale image
+            watermark_mask: Current watermark mask to avoid protecting actual watermarks
+            expand_pixels: How many pixels to expand text protection for anti-aliased edges
 
         Returns:
             Binary mask protecting text areas (255 where text should be protected)
         """
-        # Identify dark regions (typically text) with gray level 0-150
-        # Raised from 80 to 150 to better protect gray text while avoiding watermarks at 233
-        _, text_protect = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+        # Step 1: Identify core text regions (very dark pixels)
+        # Use 140 as threshold to catch more anti-aliased text edges
+        # This is lower than the original 150 to catch gray text edges
+        _, core_text = cv2.threshold(gray, 140, 255, cv2.THRESH_BINARY_INV)
 
-        # Remove small noise from text protection mask
-        kernel_protect = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        text_protect = cv2.morphologyEx(
-            text_protect, cv2.MORPH_OPEN, kernel_protect, iterations=1
-        )
-        return text_protect
+        # Step 2: Expand the text region to catch anti-aliased edges
+        # Anti-aliased text edges often have gray values that overlap with watermark range
+        if expand_pixels > 0:
+            kernel_expand = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (expand_pixels*2+1, expand_pixels*2+1))
+            expanded_text = cv2.dilate(core_text, kernel_expand, iterations=1)
+        else:
+            expanded_text = core_text
+
+        # Step 3: Remove small noise from text protection mask
+        kernel_clean = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        cleaned_text = cv2.morphologyEx(expanded_text, cv2.MORPH_OPEN, kernel_clean, iterations=1)
+
+        # Step 4: Return the cleaned text mask
+        # Note: We don't refine by watermark mask here because that would remove
+        # protection for anti-aliased text edges that happen to fall in the watermark
+        # color range. The protection should be based purely on image characteristics.
+        return cleaned_text
 
     def detect_watermark_mask(self, image_rgb):
         """Detect watermark regions using selected method.
@@ -217,27 +231,29 @@ class WatermarkDetector:
             # 1. Create raw color mask
             target_gray = int(np.mean(self.watermark_color[:3]))
             color_diff = np.abs(gray.astype(int) - target_gray)
-            color_mask = (color_diff < self.color_tolerance).astype(np.uint8) * 255
+            raw_mask = (color_diff < self.color_tolerance).astype(np.uint8) * 255
 
-            # 2. Protect critical areas BEFORE morphological operations
-            # This prevents the mask from "bleeding" into text during refinement
+            # 2. PROTECT FIRST - Apply protection before any morphological operations
             if self.verbose:
                 print("Protecting text and background *before* mask refinement...")
 
-            # Protect white background
-            _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
-            protected_mask = cv2.bitwise_and(
-                color_mask, cv2.bitwise_not(background_mask)
-            )
+            # Start with the raw mask
+            protected_mask = raw_mask.copy()
 
-            # Protect dark text
+            # Protect dark text FIRST (before background to avoid interference)
             if self.protect_text:
-                text_protect_mask = self.get_text_protect_mask(gray)
+                text_protect_mask = self.get_text_protect_mask(gray, raw_mask)
                 protected_mask = cv2.bitwise_and(
                     protected_mask, cv2.bitwise_not(text_protect_mask)
                 )
 
-            # 3. Refine the *protected* mask to remove noise and fill gaps
+            # Protect white background SECOND
+            _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
+            protected_mask = cv2.bitwise_and(
+                protected_mask, cv2.bitwise_not(background_mask)
+            )
+
+            # 3. REFINE SECOND - Apply morphological operations to the protected mask
             kernel = cv2.getStructuringElement(
                 cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
             )
@@ -254,14 +270,10 @@ class WatermarkDetector:
             if self.verbose:
                 print("No color specified: Using general detection logic...")
 
-            # Use adaptive thresholding and saturation as main detectors
+            # 1. Create raw detectors (without morphological operations)
             binary = cv2.adaptiveThreshold(
                 gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
             )
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
-            )
-            opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
 
             hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
             s_channel = hsv[:, :, 1]
@@ -269,20 +281,42 @@ class WatermarkDetector:
             saturation_threshold = max(30, int(saturation_mean * 0.6))
             saturation_mask = (s_channel < saturation_threshold).astype(np.uint8) * 255
 
-            # Combine detectors
-            combined_mask = cv2.bitwise_or(opened, saturation_mask)
+            # 2. Combine raw detectors
+            combined_mask = cv2.bitwise_or(binary, saturation_mask)
 
-            # Post-protection for auto mode
+            # 3. PROTECT FIRST - Create safe zones before any refinement
+            if self.verbose:
+                print("Protecting text and background *before* mask refinement...")
+
+            # Protect white background
             _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
-            mask_no_bg = cv2.bitwise_and(
+            protected_mask = cv2.bitwise_and(
                 combined_mask, cv2.bitwise_not(background_mask)
             )
 
+            # Protect dark text
             if self.protect_text:
-                text_protect_mask = self.get_text_protect_mask(gray)
-                mask = cv2.bitwise_and(mask_no_bg, cv2.bitwise_not(text_protect_mask))
-            else:
-                mask = mask_no_bg
+                text_protect_mask = self.get_text_protect_mask(gray, protected_mask)
+                protected_mask = cv2.bitwise_and(
+                    protected_mask, cv2.bitwise_not(text_protect_mask)
+                )
+
+            # 4. REFINE SECOND - Apply morphological operations to protected mask
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
+            )
+
+            # Remove noise first (opening)
+            opened_mask = cv2.morphologyEx(
+                protected_mask, cv2.MORPH_OPEN, kernel, iterations=1
+            )
+
+            # Fill gaps in watermark regions (closing)
+            closed_mask = cv2.morphologyEx(
+                opened_mask, cv2.MORPH_CLOSE, kernel, iterations=2
+            )
+
+            mask = closed_mask
 
         if self.verbose:
             detected_pixels = np.count_nonzero(mask)
