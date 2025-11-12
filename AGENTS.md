@@ -209,6 +209,16 @@ def test_watermark_detection():
 
 ## Debugging and Troubleshooting
 
+### Repository Structure Analysis
+When analyzing the project structure, exclude the virtual environment directory to avoid cluttering the output:
+```bash
+# Exclude .venv when using tree command
+tree /F /A | findstr /V ".venv"
+
+# Or use PowerShell to exclude multiple directories
+tree /F /A | Where-Object { $_ -notmatch "\.venv|__pycache__|\.ruff_cache" }
+```
+
 ### Common Issues
 - **Poor Detection**: Adjust kernel size, try different color tolerance
 - **Artifacts**: Reduce inpaint radius, use single-pass mode
