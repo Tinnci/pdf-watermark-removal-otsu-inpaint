@@ -535,6 +535,9 @@ def main(
 
         processor = PDFProcessor(dpi=dpi, verbose=verbose)
 
+        # Initialize first_page_images to None (will be loaded as needed)
+        first_page_images = None
+
         # --- Automatic QR Code Detection and User Prompt ---
         # If QR code detection is not explicitly enabled, this block attempts to
         # detect QR codes on the first page. If found, it prompts the user to
