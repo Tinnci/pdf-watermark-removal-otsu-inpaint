@@ -891,25 +891,27 @@ def main(
 
             for page_idx, img in enumerate(images):
                 page_num = page_idx + 1
+                # Use more granular progress steps (5 steps total)
                 page_task = progress.add_task(
-                    f"[yellow]Page {page_num}/{len(images)}", total=100
+                    f"[yellow]Page {page_num}/{len(images)}", total=5
                 )
 
                 try:
                     # Watermark detection and removal
                     progress.update(
-                        page_task, description=f"[yellow]Page {page_num}: Processing..."
+                        page_task, description=f"[yellow]Page {page_num}: Starting..."
                     )
-                    progress.update(page_task, completed=0)
 
                     if multi_pass > 1:
                         processed = remover.remove_watermark_multi_pass(
-                            img, passes=multi_pass, page_num=page_num
+                            img, passes=multi_pass, page_num=page_num,
+                            progress=progress, task_id=page_task
                         )
                     else:
-                        processed = remover.remove_watermark(img, page_num=page_num)
-
-                    progress.update(page_task, completed=100)
+                        processed = remover.remove_watermark(
+                            img, page_num=page_num,
+                            progress=progress, task_id=page_task
+                        )
 
                     # Build completion message with optional strength details
                     status_msg = f"[green]✓ Page {page_num}"

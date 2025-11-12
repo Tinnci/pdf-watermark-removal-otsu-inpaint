@@ -349,24 +349,33 @@ class WatermarkDetector:
             "codes": to_remove,
         }
 
-    def detect_watermark_mask(self, image_rgb, page_num=1):
+    def detect_watermark_mask(self, image_rgb, page_num=1, progress=None, task_id=None):
         """Detect watermark regions using selected method.
 
         Args:
             image_rgb: Input image in RGB format
             page_num: Page number (1-indexed) for tracking
+            progress: Rich progress instance for updates
+            task_id: Progress task ID for updates
 
         Returns:
             Binary mask of detected watermark regions
         """
         # First detect traditional watermarks
         if self.method == "yolo":
+            if progress and task_id:
+                progress.update(task_id, description=f"[yellow]Page {page_num}: YOLO inference...")
             watermark_mask = self.detector.detect_watermark_mask(image_rgb)
         else:
+            if progress and task_id:
+                progress.update(task_id, description=f"[yellow]Page {page_num}: Color analysis...")
             watermark_mask = self._traditional_detect_mask(image_rgb)
 
         # Then detect and add QR codes if enabled
         if self.detect_qr_codes:
+            if progress and task_id:
+                progress.update(task_id, description=f"[yellow]Page {page_num}: Detecting QR codes...")
+
             qr_mask = self.detect_qr_codes_mask(image_rgb, page_num)
             if qr_mask is not None:
                 # QR codes should override text protection

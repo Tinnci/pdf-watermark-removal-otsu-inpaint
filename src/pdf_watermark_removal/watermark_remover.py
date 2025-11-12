@@ -114,9 +114,9 @@ class WatermarkRemover:
             "last_radius": self.last_stats.get("dynamic_radius", 0),
         }
 
-    def _detect_and_refine_mask(self, image_rgb, page_num=1):
+    def _detect_and_refine_mask(self, image_rgb, page_num=1, progress=None, task_id=None):
         """Detect and refine watermark mask."""
-        mask = self.detector.detect_watermark_mask(image_rgb, page_num)
+        mask = self.detector.detect_watermark_mask(image_rgb, page_num, progress, task_id)
         return self.detector.refine_mask(mask)
 
     def _calculate_dynamic_radius(self, mask):
@@ -150,12 +150,14 @@ class WatermarkRemover:
             )
         return restored
 
-    def remove_watermark(self, image_rgb, page_num=1):
+    def remove_watermark(self, image_rgb, page_num=1, progress=None, task_id=None):
         """Remove watermark from an image.
 
         Args:
             image_rgb: Input image in RGB format (0-255)
             page_num: Page number (1-indexed) for tracking
+            progress: Rich progress instance for updates
+            task_id: Progress task ID for updates
 
         Returns:
             Image with watermark removed (RGB format)
@@ -163,12 +165,21 @@ class WatermarkRemover:
         if self.verbose:
             print("Detecting watermark regions...")
 
-        mask = self._detect_and_refine_mask(image_rgb, page_num)
+        if progress and task_id:
+            progress.update(task_id, description=f"[yellow]Page {page_num}: Detecting regions...")
+
+        mask = self._detect_and_refine_mask(image_rgb, page_num, progress, task_id)
 
         if np.count_nonzero(mask) == 0:
             if self.verbose:
                 print("No watermark detected, returning original image")
+            if progress and task_id:
+                progress.update(task_id, description=f"[green]✓ Page {page_num}: No watermark found")
+                progress.update(task_id, completed=100)
             return image_rgb.astype(np.uint8)
+
+        if progress and task_id:
+            progress.update(task_id, description=f"[yellow]Page {page_num}: Applying inpainting...")
 
         if self.verbose:
             print(f"Applying inpainting with radius {self.inpaint_radius}...")
@@ -185,14 +196,20 @@ class WatermarkRemover:
             )
 
         restored = self._apply_inpainting(image_rgb, mask, dynamic_radius)
-        return self._apply_final_blending(image_rgb, restored, mask)
+        result = self._apply_final_blending(image_rgb, restored, mask)
 
-    def _process_single_pass(self, result, pass_num, passes, page_num=1):
+        if progress and task_id:
+            progress.update(task_id, description=f"[green]✓ Page {page_num}: Complete")
+            progress.update(task_id, completed=100)
+
+        return result
+
+    def _process_single_pass(self, result, pass_num, passes, page_num=1, progress=None, task_id=None):
         """Process a single removal pass."""
         if self.verbose:
             print(f"Pass {pass_num + 1}/{passes}")
 
-        mask = self._detect_and_refine_mask(result, page_num)
+        mask = self._detect_and_refine_mask(result, page_num, progress, task_id)
 
         if np.count_nonzero(mask) == 0:
             if self.verbose:
@@ -219,7 +236,7 @@ class WatermarkRemover:
         result = self._apply_final_blending(result, result_inpainted, mask)
         return result, True
 
-    def remove_watermark_multi_pass(self, image_rgb, passes=2, page_num=1):
+    def remove_watermark_multi_pass(self, image_rgb, passes=2, page_num=1, progress=None, task_id=None):
         """Remove watermark using multiple passes with progressive mask expansion.
 
         Uses a smarter approach: instead of reprocessing the entire image multiple
@@ -230,6 +247,8 @@ class WatermarkRemover:
             image_rgb: Input image in RGB format
             passes: Number of removal passes
             page_num: Page number (1-indexed) for tracking
+            progress: Rich progress instance for updates
+            task_id: Progress task ID for updates
 
         Returns:
             Image with watermark removed
@@ -237,8 +256,14 @@ class WatermarkRemover:
         result = image_rgb.copy()
 
         for pass_num in range(passes):
+            if progress and task_id:
+                progress.update(
+                    task_id,
+                    description=f"[yellow]Page {page_num}: Pass {pass_num+1}/{passes}..."
+                )
+
             result, has_watermark = self._process_single_pass(
-                result, pass_num, passes, page_num
+                result, pass_num, passes, page_num, progress, task_id
             )
             if not has_watermark:
                 break
