@@ -30,6 +30,9 @@ class ProcessingStats:
         self.page_width = 2000  # Default A4 at 150 DPI: ~1654px
         self.page_height = 2825  # Default A4 at 150 DPI: ~2339px
         self.page_stats = []  # Track per-page statistics
+        self.qr_codes_detected = 0
+        self.qr_codes_removed = 0
+        self.qr_code_categories = {}  # Track QR code categories
 
     def set_watermark_color(self, color_rgb, coverage=0.0):
         """Set detected watermark color.
@@ -70,6 +73,33 @@ class ProcessingStats:
         """
         self.output_file = output_file
         self.output_size_mb = file_size_mb
+
+    def set_qr_stats(self, detected_count, removed_count, categories_dict=None):
+        """Set QR code detection and removal statistics.
+
+        Args:
+            detected_count: Total number of QR codes detected
+            removed_count: Number of QR codes removed
+            categories_dict: Dictionary of QR code categories and their counts
+        """
+        self.qr_codes_detected = detected_count
+        self.qr_codes_removed = removed_count
+        if categories_dict:
+            self.qr_code_categories = categories_dict
+
+    def add_qr_detection(self, qr_codes):
+        """Add QR code detection information.
+
+        Args:
+            qr_codes: List of detected QR code objects
+        """
+        self.qr_codes_detected = len(qr_codes)
+        # Count by category
+        for qr in qr_codes:
+            category = qr.category
+            self.qr_code_categories[category] = (
+                self.qr_code_categories.get(category, 0) + 1
+            )
 
     def set_page_size(self, width, height):
         """Set page dimensions for accurate pixel calculations.
@@ -133,6 +163,17 @@ class ProcessingStats:
         table.add_row(
             f"[bold]{i18n_t('time_elapsed')}:[/bold]", self.get_elapsed_time()
         )
+
+        # Add QR code statistics if any were detected
+        if self.qr_codes_detected > 0:
+            table.add_row(
+                "[bold]QR Codes Detected:[/bold]", f"{self.qr_codes_detected}"
+            )
+            if self.qr_codes_removed > 0:
+                table.add_row(
+                    "[bold]QR Codes Removed:[/bold]",
+                    f"[red]{self.qr_codes_removed}[/red]",
+                )
 
         if self.output_file:
             table.add_row(

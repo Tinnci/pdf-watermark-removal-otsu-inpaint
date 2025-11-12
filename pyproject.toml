@@ -39,12 +39,10 @@ dependencies = [
     "ultralytics>=8.3.227",
 ]
 
-[project.scripts]
-pdf-watermark-removal = "pdf_watermark_removal.cli:main"
-
 [project.optional-dependencies]
 yolo = ["ultralytics>=8.3.0"]
 yolo-gpu = ["ultralytics>=8.3.0", "torch>=2.0.0"]
+qr = ["pyzbar>=0.1.9", "Pillow>=9.0.0"]  # Additional QR code detection support
 dev = [
     "pytest>=7.0.0",
     "ruff>=0.1.0",
@@ -52,6 +50,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pdf_watermark_removal"]
+
+[project.scripts]
+pdf-watermark-removal = "pdf_watermark_removal.cli:main"
 
 [tool.ruff]
 line-length = 88

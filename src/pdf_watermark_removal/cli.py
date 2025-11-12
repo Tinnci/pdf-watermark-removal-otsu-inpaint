@@ -270,6 +270,36 @@ def parse_color(color_str):
     is_flag=True,
     help="List available YOLO models and exit",
 )
+@click.option(
+    "--detect-qr-codes",
+    is_flag=True,
+    default=False,
+    help="Enable QR code detection and removal",
+)
+@click.option(
+    "--qr-detection-method",
+    default="opencv",
+    type=click.Choice(["opencv", "pyzbar"]),
+    help="QR code detection method: 'opencv'=built-in (default), 'pyzbar'=alternative library",
+)
+@click.option(
+    "--remove-all-qr-codes",
+    is_flag=True,
+    default=False,
+    help="Remove all detected QR codes (treat as watermarks)",
+)
+@click.option(
+    "--qr-categories-to-remove",
+    default=None,
+    type=str,
+    help="Comma-separated list of QR code categories to remove (e.g., 'advertisement,unknown')",
+)
+@click.option(
+    "--qr-preset",
+    default=None,
+    type=click.Choice(["aggressive", "conservative", "ads_only", "interactive"]),
+    help="QR code removal preset: 'aggressive'=remove all, 'conservative'=remove ads+unknown, 'ads_only'=remove only ads, 'interactive'=prompt user",
+)
 def main(
     input_pdf,
     output_pdf,
@@ -296,6 +326,11 @@ def main(
     lang,
     verbose,
     list_models,
+    detect_qr_codes,
+    qr_detection_method,
+    remove_all_qr_codes,
+    qr_categories_to_remove,
+    qr_preset,
 ):
     """Remove watermarks from PDF using Otsu threshold and inpaint."""
     try:
@@ -398,19 +433,86 @@ def main(
         # Parse color if provided
         watermark_color = parse_color(color) if color else None
 
+        # Parse QR code categories to remove
+        qr_categories_list = None
+        if qr_categories_to_remove:
+            qr_categories_list = [
+                cat.strip() for cat in qr_categories_to_remove.split(",")
+            ]
+
+        # Auto-detect and prompt for QR code scanning will happen after processor is created
+
+        # Handle QR code preset
+        if qr_preset and detect_qr_codes:
+            if qr_preset == "aggressive":
+                remove_all_qr_codes = True
+            elif qr_preset == "conservative":
+                qr_categories_list = ["advertisement", "unknown"]
+            elif qr_preset == "ads_only":
+                qr_categories_list = ["advertisement"]
+            # "interactive" will be handled later
+
         processor = PDFProcessor(dpi=dpi, verbose=verbose)
 
-        # Interactive color selection only needed for traditional method
-        use_interactive_preset = False
-        if detection_method == "traditional" and not auto_color and not watermark_color:
+        # Auto-detect and prompt for QR code scanning if not explicitly requested
+        if not detect_qr_codes:
+            # Quick QR code detection on first page to see if there might be QR codes
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
                 transient=True,
             ) as progress:
-                task = progress.add_task(f"[cyan]{t('loading_pdf')}...", total=None)
-                first_page_images = processor.pdf_to_images(input_pdf, pages=[1])
+                task = progress.add_task(
+                    "[cyan]Analyzing document for QR codes...", total=None
+                )
+                first_page_for_scan = processor.pdf_to_images(input_pdf, pages=[1])
                 progress.stop_task(task)
+
+            if first_page_for_scan:
+                from .qr_detector import QRCodeDetector
+
+                temp_detector = QRCodeDetector(method="opencv", verbose=False)
+                potential_qr_codes = temp_detector.detect_qr_codes(
+                    first_page_for_scan[0]
+                )
+
+                if potential_qr_codes:
+                    # Found potential QR codes - ask user if they want to enable detection
+                    try:
+                        enable_qr = click.confirm(
+                            f"\n[Auto-detected] Found {len(potential_qr_codes)} potential QR code(s) in document. "
+                            "Enable QR code scanning and removal?",
+                            default=True,
+                        )
+                        if enable_qr:
+                            detect_qr_codes = True
+                            # Store the loaded image for later use
+                            first_page_images = first_page_for_scan
+                            console.print(
+                                "[green][OK] QR code detection enabled for this session![/green]"
+                            )
+                        else:
+                            console.print(
+                                "[dim]QR code detection skipped. Run with --detect-qr-codes to enable later.[/dim]"
+                            )
+                    except (EOFError, click.Abort):
+                        pass
+
+        # Interactive color selection only needed for traditional method
+        use_interactive_preset = False
+        # Note: first_page_images might already be loaded from QR auto-detection
+
+        if detection_method == "traditional" and not auto_color and not watermark_color:
+            # Only load first page if not already loaded for QR detection
+            if first_page_images is None:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    transient=True,
+                ) as progress:
+                    task = progress.add_task(f"[cyan]{t('loading_pdf')}...", total=None)
+                    first_page_images = processor.pdf_to_images(input_pdf, pages=[1])
+                    progress.stop_task(task)
 
             if first_page_images:
                 selector = ColorSelector(verbose=verbose)
@@ -427,6 +529,48 @@ def main(
                     )
                 else:
                     watermark_color = color_result
+
+        # Load first page for QR code detection if needed (and not already loaded)
+        if detect_qr_codes and qr_preset == "interactive" and first_page_images is None:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                transient=True,
+            ) as progress:
+                task = progress.add_task(
+                    "[cyan]Loading first page for QR analysis...", total=None
+                )
+                first_page_images = processor.pdf_to_images(input_pdf, pages=[1])
+                progress.stop_task(task)
+
+        # Interactive QR code selection
+        if detect_qr_codes and qr_preset == "interactive" and first_page_images:
+            from .qr_detector import QRCodeDetector
+            from .qr_selector import QRCodeSelector
+
+            # Create temporary detector for interactive selection
+            temp_qr_detector = QRCodeDetector(
+                method=qr_detection_method, verbose=verbose
+            )
+            qr_codes = temp_qr_detector.detect_qr_codes(first_page_images[0])
+
+            if qr_codes:
+                qr_selector = QRCodeSelector(verbose=verbose)
+                codes_to_remove = qr_selector.select_qr_codes_to_remove(
+                    qr_codes, first_page_images[0]
+                )
+
+                if codes_to_remove:
+                    # Update the categories to remove based on user selection
+                    selected_categories = {qr.category for qr in codes_to_remove}
+                    qr_categories_list = list(selected_categories)
+                    console.print(
+                        f"[bold green]✓ QR code selection complete: {len(codes_to_remove)} codes selected for removal[/bold green]"
+                    )
+                else:
+                    console.print("[dim]No QR codes selected for removal[/dim]")
+            else:
+                console.print("[dim]No QR codes detected in first page[/dim]")
 
         # Initialize remover with detected/selected color
         remover = WatermarkRemover(
@@ -445,6 +589,11 @@ def main(
             yolo_device=yolo_device,
             yolo_version=yolo_version,
             auto_download_model=True,
+            # QR code parameters
+            detect_qr_codes=detect_qr_codes,
+            qr_detection_method=qr_detection_method,
+            remove_all_qr_codes=remove_all_qr_codes,
+            qr_code_categories_to_remove=qr_categories_list,
         )
 
         # Display strength configuration if requested
@@ -484,6 +633,32 @@ def main(
         auto_classify = not no_auto_classify  # Invert the flag
         classification = None
 
+        # Auto-detect and prompt for electronic-color preset for suitable documents
+        auto_preset_suggested = False
+        if auto_classify and images and not preset and not use_interactive_preset:
+            classifier = DocumentClassifier(verbose=verbose)
+            classification = classifier.classify(images[0])
+
+            # Suggest electronic-color preset for electronic documents with high confidence
+            if (
+                classification.doc_type.value == "electronic"
+                and classification.confidence >= 75
+            ):
+                try:
+                    suggest_preset = click.confirm(
+                        "\nElectronic document detected with high confidence. "
+                        "Use 'electronic-color' preset mode for precise watermark removal?",
+                        default=True,
+                    )
+                    if suggest_preset:
+                        preset = "electronic-color"
+                        auto_preset_suggested = True
+                        console.print(
+                            "[green]✓ Electronic-color preset activated for this session![/green]"
+                        )
+                except (EOFError, click.Abort):
+                    pass
+
         # Apply preset parameters if specified via CLI flag OR interactively chosen
         if preset == "electronic-color" or use_interactive_preset:
             preset_params = get_optimal_parameters(None, preset_mode="electronic-color")
@@ -519,10 +694,11 @@ def main(
             if applied_params and verbose:
                 console.print(f"[dim]   └─ Applied: {', '.join(applied_params)}[/dim]")
 
-            # Disable auto-classify when using preset
-            auto_classify = False
+            # Disable auto-classify when using preset (unless it was auto-suggested)
+            if not auto_preset_suggested:
+                auto_classify = False
 
-        if auto_classify and images:
+        if auto_classify and images and not auto_preset_suggested:
             classifier = DocumentClassifier(verbose=verbose)
             classification = classifier.classify(images[0])
             auto_params = get_optimal_parameters(classification.doc_type)
@@ -641,6 +817,12 @@ def main(
                     )
                     stats.add_page_stat(page_num, coverage, status="success")
 
+                    # Track QR code statistics if enabled
+                    if detect_qr_codes:
+                        qr_codes = remover.detector.get_detected_qr_codes()
+                        if qr_codes:
+                            stats.add_qr_detection(qr_codes)
+
                 except Exception as e:
                     error_msg = f"[red]Page {page_num}: {str(e)[:50]}[/red]"
                     progress.update(page_task, description=error_msg)
@@ -683,6 +865,43 @@ def main(
             stats.set_watermark_color(watermark_color, coverage=100.0)
         output_size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
         stats.set_output(output_pdf, output_size_mb)
+
+        # Set final QR code statistics
+        if detect_qr_codes:
+            # Aggregate QR code stats from all pages
+            total_detected = 0
+            total_removed = 0
+            categories_combined = {}
+
+            # Get QR codes from the detector (last processed page)
+            qr_codes = remover.detector.get_detected_qr_codes()
+            if qr_codes:
+                total_detected = len(qr_codes)
+                # Count removed QR codes based on categories
+                if remove_all_qr_codes:
+                    total_removed = total_detected
+                elif qr_categories_list:
+                    total_removed = len(
+                        [qr for qr in qr_codes if qr.category in qr_categories_list]
+                    )
+                else:
+                    # Default conservative removal
+                    total_removed = len(
+                        [
+                            qr
+                            for qr in qr_codes
+                            if qr.category in ["advertisement", "unknown"]
+                        ]
+                    )
+
+                # Count categories
+                for qr in qr_codes:
+                    category = qr.category
+                    categories_combined[category] = (
+                        categories_combined.get(category, 0) + 1
+                    )
+
+            stats.set_qr_stats(total_detected, total_removed, categories_combined)
 
         # Display statistics
         stats.display_summary(i18n_t=t)

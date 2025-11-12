@@ -25,6 +25,10 @@ class WatermarkRemover:
         yolo_device="auto",
         yolo_version="v8",
         auto_download_model=True,
+        detect_qr_codes=False,
+        qr_detection_method="opencv",
+        remove_all_qr_codes=False,
+        qr_code_categories_to_remove=None,
     ):
         """Initialize the watermark remover.
 
@@ -43,6 +47,10 @@ class WatermarkRemover:
             yolo_device: YOLO device ('cpu', 'cuda', 'auto')
             yolo_version: 'v8', 'v11', or 'v11' (default: v8)
             auto_download_model: Automatically download YOLO model if not found
+            detect_qr_codes: Enable QR code detection
+            qr_detection_method: QR detection method ('opencv' or 'pyzbar')
+            remove_all_qr_codes: Remove all detected QR codes
+            qr_code_categories_to_remove: List of QR code categories to remove
         """
         self.detector = WatermarkDetector(
             kernel_size=kernel_size,
@@ -57,6 +65,10 @@ class WatermarkRemover:
             yolo_device=yolo_device,
             yolo_version=yolo_version,
             auto_download_model=auto_download_model,
+            detect_qr_codes=detect_qr_codes,
+            qr_detection_method=qr_detection_method,
+            remove_all_qr_codes=remove_all_qr_codes,
+            qr_code_categories_to_remove=qr_code_categories_to_remove,
         )
         self.inpaint_radius = inpaint_radius
         self.inpaint_strength = inpaint_strength

@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 
 from .model_manager import ModelManager
+from .qr_detector import QRCodeDetector
 
 
 class WatermarkDetector:
@@ -23,6 +24,10 @@ class WatermarkDetector:
         yolo_device="auto",
         yolo_version="v8",
         auto_download_model=True,
+        detect_qr_codes=False,
+        qr_detection_method="opencv",
+        remove_all_qr_codes=False,
+        qr_code_categories_to_remove=None,
     ):
         """Initialize the watermark detector.
 
@@ -39,11 +44,29 @@ class WatermarkDetector:
             yolo_device: YOLO device ('cpu', 'cuda', 'auto')
             yolo_version: 'v8', 'v12', or 'v11' (default: v8)
             auto_download_model: Automatically download YOLO model if not found
+            detect_qr_codes: Enable QR code detection
+            qr_detection_method: QR detection method ('opencv' or 'pyzbar')
+            remove_all_qr_codes: Remove all detected QR codes
+            qr_code_categories_to_remove: List of QR code categories to remove
         """
         self.method = detection_method
         self.verbose = verbose
         # Store kernel_size for both methods (used in refine_mask)
         self.kernel_size = kernel_size
+
+        # QR code detection settings
+        self.detect_qr_codes = detect_qr_codes
+        self.qr_detection_method = qr_detection_method
+        self.remove_all_qr_codes = remove_all_qr_codes
+        self.qr_code_categories_to_remove = qr_code_categories_to_remove or []
+        self.qr_detector = None
+        self.detected_qr_codes = []
+
+        # Initialize QR detector if enabled
+        if self.detect_qr_codes:
+            self.qr_detector = QRCodeDetector(
+                method=qr_detection_method, verbose=verbose
+            )
 
         if detection_method == "yolo":
             try:
@@ -174,20 +197,93 @@ class WatermarkDetector:
         # Step 2: Expand the text region to catch anti-aliased edges
         # Anti-aliased text edges often have gray values that overlap with watermark range
         if expand_pixels > 0:
-            kernel_expand = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (expand_pixels*2+1, expand_pixels*2+1))
+            kernel_expand = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (expand_pixels * 2 + 1, expand_pixels * 2 + 1)
+            )
             expanded_text = cv2.dilate(core_text, kernel_expand, iterations=1)
         else:
             expanded_text = core_text
 
         # Step 3: Remove small noise from text protection mask
         kernel_clean = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        cleaned_text = cv2.morphologyEx(expanded_text, cv2.MORPH_OPEN, kernel_clean, iterations=1)
+        cleaned_text = cv2.morphologyEx(
+            expanded_text, cv2.MORPH_OPEN, kernel_clean, iterations=1
+        )
 
         # Step 4: Return the cleaned text mask
         # Note: We don't refine by watermark mask here because that would remove
         # protection for anti-aliased text edges that happen to fall in the watermark
         # color range. The protection should be based purely on image characteristics.
         return cleaned_text
+
+    def detect_qr_codes(self, image_rgb):
+        """Detect QR codes in the image.
+
+        Args:
+            image_rgb: Input image in RGB format
+
+        Returns:
+            List of detected QR code information
+        """
+        if not self.detect_qr_codes or self.qr_detector is None:
+            return []
+
+        return self.qr_detector.detect_qr_codes(image_rgb)
+
+    def detect_qr_codes_mask(self, image_rgb):
+        """Create mask for QR codes that should be removed.
+
+        Args:
+            image_rgb: Input image in RGB format
+
+        Returns:
+            Binary mask of QR codes to remove, or None if no QR codes
+        """
+        if not self.detect_qr_codes or self.qr_detector is None:
+            return None
+
+        # Detect QR codes
+        qr_codes = self.qr_detector.detect_qr_codes(image_rgb)
+        self.detected_qr_codes = qr_codes
+
+        if not qr_codes:
+            return None
+
+        # Determine which QR codes to remove
+        if self.remove_all_qr_codes:
+            codes_to_remove = qr_codes
+        elif self.qr_code_categories_to_remove:
+            codes_to_remove = [
+                qr
+                for qr in qr_codes
+                if qr.category in self.qr_code_categories_to_remove
+            ]
+        else:
+            # Default: remove advertisements and unknown codes
+            codes_to_remove = [
+                qr for qr in qr_codes if qr.category in ["advertisement", "unknown"]
+            ]
+
+        if not codes_to_remove:
+            return None
+
+        # Create mask for QR codes to remove
+        qr_mask = self.qr_detector.create_qr_mask(
+            image_rgb.shape, codes_to_remove, padding=5
+        )
+
+        if self.verbose and codes_to_remove:
+            print(f"Including {len(codes_to_remove)} QR codes in removal mask")
+
+        return qr_mask
+
+    def get_detected_qr_codes(self):
+        """Get the list of detected QR codes from the last detection.
+
+        Returns:
+            List of QRCodeInfo objects
+        """
+        return self.detected_qr_codes
 
     def detect_watermark_mask(self, image_rgb):
         """Detect watermark regions using selected method.
@@ -198,10 +294,20 @@ class WatermarkDetector:
         Returns:
             Binary mask of detected watermark regions
         """
+        # First detect traditional watermarks
         if self.method == "yolo":
-            return self.detector.detect_watermark_mask(image_rgb)
+            watermark_mask = self.detector.detect_watermark_mask(image_rgb)
         else:
-            return self._traditional_detect_mask(image_rgb)
+            watermark_mask = self._traditional_detect_mask(image_rgb)
+
+        # Then detect and add QR codes if enabled
+        if self.detect_qr_codes:
+            qr_mask = self.detect_qr_codes_mask(image_rgb)
+            if qr_mask is not None:
+                # Combine watermark and QR code masks
+                watermark_mask = cv2.bitwise_or(watermark_mask, qr_mask)
+
+        return watermark_mask
 
     def _traditional_detect_mask(self, image_rgb):
         """Traditional watermark detection using color analysis and structure validation.
