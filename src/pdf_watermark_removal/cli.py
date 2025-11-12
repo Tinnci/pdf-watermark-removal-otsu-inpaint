@@ -1020,7 +1020,7 @@ def main(
                     codes_to_remove = [
                         qr
                         for qr in qr_codes
-                        if qr.category in ["advertisement", "unknown"]
+                        if qr.category in ["advertisement", "unknown", "website"]
                     ]
 
                 # Build summary
@@ -1073,12 +1073,12 @@ def main(
                         [qr for qr in qr_codes if qr.category in qr_categories_list]
                     )
                 else:
-                    # Default conservative removal
+                    # Default removal: includes website, advertisement, and unknown QR codes
                     total_removed = len(
                         [
                             qr
                             for qr in qr_codes
-                            if qr.category in ["advertisement", "unknown"]
+                            if qr.category in ["advertisement", "unknown", "website"]
                         ]
                     )
 

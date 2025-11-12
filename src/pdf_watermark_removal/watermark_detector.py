@@ -599,10 +599,10 @@ class WatermarkDetector:
                     protected_watermark_mask, cv2.bitwise_not(text_protect_mask)
                 )
 
-        # QR codes get background protection but NOT text protection
+        # QR codes do NOT get background protection (they're typically on white backgrounds)
         protected_qr_mask = None
         if qr_mask is not None:
-            protected_qr_mask = cv2.bitwise_and(qr_mask, cv2.bitwise_not(background_mask))
+            protected_qr_mask = qr_mask
 
         # STEP 2: Unified refinement (60-90% progress)
         if progress and task_id:
@@ -634,8 +634,9 @@ class WatermarkDetector:
         # Merge masks: QR codes take priority over watermarks
         combined_mask = refined_watermark_mask.copy()
         if refined_qr_mask is not None:
-            # Dilate QR mask slightly for complete removal
-            qr_mask_dilated = cv2.dilate(refined_qr_mask, kernel, iterations=1)
+            # Dilate QR mask slightly for complete removal using RECT kernel for better coverage
+            qr_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+            qr_mask_dilated = cv2.dilate(refined_qr_mask, qr_kernel, iterations=1)
             combined_mask = cv2.bitwise_or(combined_mask, qr_mask_dilated)
 
         return combined_mask
@@ -676,8 +677,8 @@ class WatermarkDetector:
 
         combined_mask = protected_yolo_mask.copy()
         if qr_mask is not None:
-            # Apply background protection to QR mask too
-            protected_qr_mask = cv2.bitwise_and(qr_mask, cv2.bitwise_not(background_mask))
+            # QR masks do NOT get background protection (they're typically on white backgrounds)
+            protected_qr_mask = qr_mask
             # Dilate QR mask slightly for complete removal
             kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
             qr_mask_dilated = cv2.dilate(protected_qr_mask, kernel, iterations=1)
