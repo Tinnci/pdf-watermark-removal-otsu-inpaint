@@ -115,9 +115,25 @@ class WatermarkRemover:
         }
 
     def _detect_and_refine_mask(self, image_rgb, page_num=1, progress=None, task_id=None):
-        """Detect and refine watermark mask."""
+        """Detect and refine watermark mask.
+        
+        Dynamically adjusts refinement parameters when QR codes are present
+        to prevent them from being filtered out due to size constraints.
+        """
         mask = self.detector.detect_watermark_mask(image_rgb, page_num, progress, task_id)
-        return self.detector.refine_mask(mask)
+        
+        # If QR codes were detected on this page, increase max_area to prevent filtering them out.
+        # QR codes are large components that exceed typical max_area (5000), so we set it to
+        # the full image area to ensure they're preserved in the refined mask.
+        has_qr_codes_on_page = self.detector.current_page_qr_codes
+        
+        if self.detector.method == 'traditional' and has_qr_codes_on_page:
+            # Use full image area as max_area to preserve QR codes
+            image_area = mask.shape[0] * mask.shape[1]
+            return self.detector.refine_mask(mask, max_area=image_area)
+        else:
+            # Default refinement for YOLO or traditional without QR codes
+            return self.detector.refine_mask(mask)
 
     def _calculate_dynamic_radius(self, mask):
         """Calculate dynamic inpaint radius based on coverage and strength."""
