@@ -3,13 +3,13 @@
 import click
 from rich.console import Console
 from rich.panel import Panel
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
-from rich.style import Style
 
 from .color_analyzer import ColorAnalyzer, ColorType
-from .stats import ColorPreview
 from .i18n import t
+from .stats import ColorPreview
 
 
 class ColorSelector:
@@ -143,7 +143,7 @@ class ColorSelector:
             f"[bold cyan]💡 PRESET MODE: Precise Color Removal[/bold cyan]\n\n"
             f"For electronic documents (not scanned), the\n"
             f"[yellow]'electronic-color'[/yellow] preset provides:\n\n"
-            f"  ✓ Extremely strict color matching (tolerance: 5)\n"
+            f"  ✓ Strict color matching (tolerance: 15)\n"
             f"  ✓ Removes ONLY the exact color: RGB({r},{g},{b})\n"
             f"  ✓ Protects text and backgrounds\n"
             f"  ✓ Optimized for sharp edges\n\n"

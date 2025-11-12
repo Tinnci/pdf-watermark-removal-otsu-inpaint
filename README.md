@@ -108,7 +108,7 @@ pdf-watermark-removal input.pdf output.pdf --preset electronic-color --color "20
 ```
 
 This preset:
-- Uses **extremely strict color matching** (tolerance: 5) - only removes the exact color specified
+- Uses **extremely strict color matching** (tolerance: 10) - only removes the exact color specified
 - Optimized for electronic documents with discrete colors and sharp edges
 - Protects black text and white backgrounds
 - Uses traditional method (no YOLO required)

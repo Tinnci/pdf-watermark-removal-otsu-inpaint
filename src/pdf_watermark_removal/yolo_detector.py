@@ -1,10 +1,11 @@
 """Universal YOLO detector supporting v8 and v12 for watermark detection."""
 
-import cv2
-import numpy as np
+from enum import Enum
 from pathlib import Path
 from typing import Tuple
-from enum import Enum
+
+import cv2
+import numpy as np
 
 try:
     from ultralytics import YOLO

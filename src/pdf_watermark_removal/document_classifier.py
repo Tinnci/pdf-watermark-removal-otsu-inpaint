@@ -1,9 +1,10 @@
 """Document type classifier for automatic parameter optimization."""
 
+from dataclasses import dataclass
+from enum import Enum
+
 import cv2
 import numpy as np
-from enum import Enum
-from dataclasses import dataclass
 
 
 class DocumentType(Enum):
@@ -190,14 +191,13 @@ def get_optimal_parameters(doc_type, preset_mode=None):
     # Electronic Color preset: Precise color removal for electronic documents
     if preset_mode == "electronic-color":
         return {
-            "color_tolerance": 5,  # Extremely strict color matching
+            "color_tolerance": 15,  # Slightly more forgiving for anti-aliasing
             "inpaint_strength": 1.0,  # Medium inpaint strength
             "kernel_size": 2,  # Small kernel for sharp edges
             "protect_text": True,  # Protect black text
             "multi_pass": 1,  # Single pass sufficient
             "dpi": 150,  # Standard DPI for electronic docs
             "auto_detect_color": False,  # Must specify color manually
-            "color_weight": 2.5,  # Heavily prioritize color-based detection
         }
 
     if doc_type == DocumentType.ELECTRONIC:

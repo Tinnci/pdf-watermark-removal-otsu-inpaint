@@ -1,28 +1,27 @@
 """Command-line interface for PDF watermark removal."""
 
-import sys
 import os
+import sys
 from pathlib import Path
 
-import numpy as np
 import click
+import numpy as np
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    BarColumn,
     TextColumn,
     TimeRemainingColumn,
 )
 
-from .pdf_processor import PDFProcessor
-from .watermark_remover import WatermarkRemover
 from .color_selector import ColorSelector
-from .stats import ProcessingStats
-from .i18n import set_language, t
 from .document_classifier import DocumentClassifier, get_optimal_parameters
-
+from .i18n import set_language, t
+from .pdf_processor import PDFProcessor
+from .stats import ProcessingStats
+from .watermark_remover import WatermarkRemover
 
 console = Console()
 
@@ -401,9 +400,6 @@ def main(
 
         processor = PDFProcessor(dpi=dpi, verbose=verbose)
 
-        # Initialize color_weight (will be updated if preset is used)
-        color_weight = 1.0
-
         # Interactive color selection only needed for traditional method
         use_interactive_preset = False
         if detection_method == "traditional" and not auto_color and not watermark_color:
@@ -449,8 +445,6 @@ def main(
             yolo_device=yolo_device,
             yolo_version=yolo_version,
             auto_download_model=True,
-            # Color weight for preset mode
-            color_weight=color_weight,
         )
 
         # Display strength configuration if requested
@@ -521,10 +515,6 @@ def main(
             if dpi == 150:  # Default value
                 dpi = preset_params["dpi"]
                 applied_params.append(f"dpi={dpi}")
-
-            # Apply color weight from preset
-            color_weight = preset_params.get("color_weight", 1.0)
-            applied_params.append(f"color_weight={color_weight}")
 
             if applied_params and verbose:
                 console.print(f"[dim]   └─ Applied: {', '.join(applied_params)}[/dim]")

@@ -146,7 +146,7 @@ uv tool install --editable ".[dev]"
 pytest
 
 # Format code
-black src/
+ruff format src/
 
 # Lint code
 ruff check src/

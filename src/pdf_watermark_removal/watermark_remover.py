@@ -2,6 +2,7 @@
 
 import cv2
 import numpy as np
+
 from .watermark_detector import WatermarkDetector
 
 
@@ -24,7 +25,6 @@ class WatermarkRemover:
         yolo_device="auto",
         yolo_version="v8",
         auto_download_model=True,
-        color_weight=1.0,
     ):
         """Initialize the watermark remover.
 
@@ -43,7 +43,6 @@ class WatermarkRemover:
             yolo_device: YOLO device ('cpu', 'cuda', 'auto')
             yolo_version: 'v8', 'v11', or 'v11' (default: v8)
             auto_download_model: Automatically download YOLO model if not found
-            color_weight: Weight for color-based detection (1.0=normal, 2.5=high priority)
         """
         self.detector = WatermarkDetector(
             kernel_size=kernel_size,
@@ -58,7 +57,6 @@ class WatermarkRemover:
             yolo_device=yolo_device,
             yolo_version=yolo_version,
             auto_download_model=auto_download_model,
-            color_weight=color_weight,
         )
         self.inpaint_radius = inpaint_radius
         self.inpaint_strength = inpaint_strength

@@ -1,8 +1,9 @@
 """Color detection and visualization for watermark identification."""
 
+from enum import Enum
+
 import cv2
 import numpy as np
-from enum import Enum
 
 
 class ColorType(Enum):
