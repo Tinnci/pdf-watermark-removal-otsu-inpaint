@@ -32,6 +32,7 @@ class QRCodeInfo:
     qr_type: QRCodeType
     content: str
     category: str  # For grouping similar QR codes
+    page_num: int = 1  # Track which page the QR code was found on
 
 
 def _is_phone_number(text: str) -> bool:
@@ -167,24 +168,27 @@ class QRCodeDetector:
                 self.method = "opencv"
                 self._opencv_detector = cv2.QRCodeDetector()
 
-    def detect_qr_codes(self, image_rgb: np.ndarray) -> List[QRCodeInfo]:
+    def detect_qr_codes(
+        self, image_rgb: np.ndarray, page_num: int = 1
+    ) -> List[QRCodeInfo]:
         """Detect QR codes in the given image.
 
         Args:
             image_rgb: Input image in RGB format
+            page_num: Page number (1-indexed) for tracking
 
         Returns:
             List of detected QR code information
         """
         if self.method == "opencv":
-            return self._detect_opencv(image_rgb)
+            return self._detect_opencv(image_rgb, page_num)
         elif self.method == "pyzbar" and self._pyzbar_available:
-            return self._detect_pyzbar(image_rgb)
+            return self._detect_pyzbar(image_rgb, page_num)
         else:
             return []
 
     def _create_qrcode_info_from_detection(
-        self, data: str, bbox_coords: np.ndarray, confidence: float
+        self, data: str, bbox_coords: np.ndarray, confidence: float, page_num: int = 1
     ) -> QRCodeInfo:
         """
         Helper to create a QRCodeInfo object from raw detection data.
@@ -193,6 +197,7 @@ class QRCodeDetector:
             data (str): Decoded QR code content.
             bbox_coords (np.ndarray): Bounding box coordinates (e.g., from OpenCV).
             confidence (float): Confidence score of the detection.
+            page_num (int): Page number where QR code was detected.
 
         Returns:
             QRCodeInfo: An object containing structured QR code information.
@@ -215,9 +220,12 @@ class QRCodeDetector:
             qr_type=qr_type,
             content=data,
             category=category,
+            page_num=page_num,  # NEW
         )
 
-    def _detect_opencv(self, image_rgb: np.ndarray) -> List[QRCodeInfo]:
+    def _detect_opencv(
+        self, image_rgb: np.ndarray, page_num: int = 1
+    ) -> List[QRCodeInfo]:
         """Detect QR codes using OpenCV's built-in detector."""
         qr_codes = []
 
@@ -233,7 +241,7 @@ class QRCodeDetector:
                 bbox_points = bbox[0]  # Get the first (and usually only) QR code
 
                 qr_info = self._create_qrcode_info_from_detection(
-                    data, bbox_points, 0.9
+                    data, bbox_points, 0.9, page_num
                 )  # OpenCV doesn't provide confidence, use high default
                 qr_codes.append(qr_info)
 
@@ -248,7 +256,9 @@ class QRCodeDetector:
 
         return qr_codes
 
-    def _detect_pyzbar(self, image_rgb: np.ndarray) -> List[QRCodeInfo]:
+    def _detect_pyzbar(
+        self, image_rgb: np.ndarray, page_num: int = 1
+    ) -> List[QRCodeInfo]:
         """Detect QR codes using Pyzbar library."""
         import pyzbar.pyzbar as pyzbar
 
@@ -266,7 +276,12 @@ class QRCodeDetector:
                     # Extract bounding box
                     x, y, width, height = obj.rect
                     bbox_coords = np.array(
-                        [[x, y], [x + width, y], [x + width, y + height], [x, y + height]]
+                        [
+                            [x, y],
+                            [x + width, y],
+                            [x + width, y + height],
+                            [x, y + height],
+                        ]
                     )
 
                     # Decode the data
@@ -276,7 +291,7 @@ class QRCodeDetector:
                         data = obj.data.decode("latin-1", errors="ignore")
 
                     qr_info = self._create_qrcode_info_from_detection(
-                        data, bbox_coords, 0.95
+                        data, bbox_coords, 0.95, page_num
                     )  # Pyzbar is generally reliable
                     qr_codes.append(qr_info)
 

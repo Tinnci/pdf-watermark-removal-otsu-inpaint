@@ -567,8 +567,8 @@ def main(
                     # Found potential QR codes - ask user if they want to enable detection
                     try:
                         enable_qr = click.confirm(
-                            f"\n[Auto-detected] Found {len(potential_qr_codes)} potential QR code(s) in document. "
-                            "Enable QR code scanning and removal?",
+                            f"\n[Auto-detected] Found {len(potential_qr_codes)} potential QR code(s) on first page. "
+                            "Enable QR code scanning and removal for ALL pages?",
                             default=True,
                         )
                         if enable_qr:
@@ -861,6 +861,10 @@ def main(
             page_height, page_width = images[0].shape[:2]
             stats.set_page_size(page_width, page_height)
 
+        # Clear QR codes before processing loop
+        if detect_qr_codes:
+            remover.detector.clear_qr_codes()
+
         if verbose:
             if pages_list:
                 console.print(
@@ -900,10 +904,10 @@ def main(
 
                     if multi_pass > 1:
                         processed = remover.remove_watermark_multi_pass(
-                            img, passes=multi_pass
+                            img, passes=multi_pass, page_num=page_num
                         )
                     else:
-                        processed = remover.remove_watermark(img)
+                        processed = remover.remove_watermark(img, page_num=page_num)
 
                     progress.update(page_task, completed=100)
 
@@ -944,7 +948,7 @@ def main(
 
                     # Track QR code statistics if enabled
                     if detect_qr_codes:
-                        qr_codes = remover.detector.get_detected_qr_codes()
+                        qr_codes = remover.detector.current_page_qr_codes
                         if qr_codes:
                             stats.add_qr_detection(qr_codes)
 

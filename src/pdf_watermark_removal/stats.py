@@ -88,13 +88,13 @@ class ProcessingStats:
             self.qr_code_categories = categories_dict
 
     def add_qr_detection(self, qr_codes):
-        """Add QR code detection information.
+        """Add QR code detection information for current page.
 
         Args:
-            qr_codes: List of detected QR code objects
+            qr_codes: List of QR code objects from current page
         """
-        self.qr_codes_detected = len(qr_codes)
-        # Count by category
+        self.qr_codes_detected += len(qr_codes)  # ACCUMULATE instead of overwrite
+
         for qr in qr_codes:
             category = qr.category
             self.qr_code_categories[category] = (

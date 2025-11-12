@@ -114,9 +114,9 @@ class WatermarkRemover:
             "last_radius": self.last_stats.get("dynamic_radius", 0),
         }
 
-    def _detect_and_refine_mask(self, image_rgb):
+    def _detect_and_refine_mask(self, image_rgb, page_num=1):
         """Detect and refine watermark mask."""
-        mask = self.detector.detect_watermark_mask(image_rgb)
+        mask = self.detector.detect_watermark_mask(image_rgb, page_num)
         return self.detector.refine_mask(mask)
 
     def _calculate_dynamic_radius(self, mask):
@@ -150,11 +150,12 @@ class WatermarkRemover:
             )
         return restored
 
-    def remove_watermark(self, image_rgb):
+    def remove_watermark(self, image_rgb, page_num=1):
         """Remove watermark from an image.
 
         Args:
             image_rgb: Input image in RGB format (0-255)
+            page_num: Page number (1-indexed) for tracking
 
         Returns:
             Image with watermark removed (RGB format)
@@ -162,7 +163,7 @@ class WatermarkRemover:
         if self.verbose:
             print("Detecting watermark regions...")
 
-        mask = self._detect_and_refine_mask(image_rgb)
+        mask = self._detect_and_refine_mask(image_rgb, page_num)
 
         if np.count_nonzero(mask) == 0:
             if self.verbose:
@@ -186,12 +187,12 @@ class WatermarkRemover:
         restored = self._apply_inpainting(image_rgb, mask, dynamic_radius)
         return self._apply_final_blending(image_rgb, restored, mask)
 
-    def _process_single_pass(self, result, pass_num, passes):
+    def _process_single_pass(self, result, pass_num, passes, page_num=1):
         """Process a single removal pass."""
         if self.verbose:
             print(f"Pass {pass_num + 1}/{passes}")
 
-        mask = self._detect_and_refine_mask(result)
+        mask = self._detect_and_refine_mask(result, page_num)
 
         if np.count_nonzero(mask) == 0:
             if self.verbose:
@@ -218,7 +219,7 @@ class WatermarkRemover:
         result = self._apply_final_blending(result, result_inpainted, mask)
         return result, True
 
-    def remove_watermark_multi_pass(self, image_rgb, passes=2):
+    def remove_watermark_multi_pass(self, image_rgb, passes=2, page_num=1):
         """Remove watermark using multiple passes with progressive mask expansion.
 
         Uses a smarter approach: instead of reprocessing the entire image multiple
@@ -228,6 +229,7 @@ class WatermarkRemover:
         Args:
             image_rgb: Input image in RGB format
             passes: Number of removal passes
+            page_num: Page number (1-indexed) for tracking
 
         Returns:
             Image with watermark removed
@@ -235,7 +237,9 @@ class WatermarkRemover:
         result = image_rgb.copy()
 
         for pass_num in range(passes):
-            result, has_watermark = self._process_single_pass(result, pass_num, passes)
+            result, has_watermark = self._process_single_pass(
+                result, pass_num, passes, page_num
+            )
             if not has_watermark:
                 break
 

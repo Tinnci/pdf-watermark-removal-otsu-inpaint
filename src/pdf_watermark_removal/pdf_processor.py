@@ -70,14 +70,18 @@ class PDFProcessor:
         images = []
 
         total_pages = len(doc)
-        pages_to_process = pages if pages is not None else list(range(1, total_pages + 1))
+        pages_to_process = (
+            pages if pages is not None else list(range(1, total_pages + 1))
+        )
 
         if self.verbose:
             print(f"Converting {len(pages_to_process)} pages from PDF...")
 
         for page_num in pages_to_process:
             if 1 <= page_num <= total_pages:
-                img_rgb = self._convert_page_to_image(doc, page_num, self.dpi, self.verbose)
+                img_rgb = self._convert_page_to_image(
+                    doc, page_num, self.dpi, self.verbose
+                )
                 images.append(img_rgb)
             else:
                 if self.verbose:

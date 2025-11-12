@@ -60,7 +60,8 @@ class WatermarkDetector:
         self.remove_all_qr_codes = remove_all_qr_codes
         self.qr_code_categories_to_remove = qr_code_categories_to_remove or []
         self.qr_detector = None
-        self.detected_qr_codes = []
+        self.detected_qr_codes = []  # Now accumulates across all pages
+        self.current_page_qr_codes = []  # Temporary storage for current page
 
         # Initialize QR detector if enabled
         if self.detect_qr_codes:
@@ -138,6 +139,10 @@ class WatermarkDetector:
         self.watermark_color = watermark_color
         self.protect_text = protect_text
         self.color_tolerance = color_tolerance
+
+    def clear_qr_codes(self):
+        """Clear accumulated QR codes when starting a new document."""
+        self.detected_qr_codes.clear()
 
     def detect_watermark_color(self, image_rgb):
         """Detect the dominant watermark color using color analysis.
@@ -254,11 +259,12 @@ class WatermarkDetector:
                 qr for qr in qr_codes if qr.category in ["advertisement", "unknown"]
             ]
 
-    def detect_qr_codes_mask(self, image_rgb):
+    def detect_qr_codes_mask(self, image_rgb, page_num=1):
         """Create mask for QR codes that should be removed.
 
         Args:
             image_rgb: Input image in RGB format
+            page_num: Page number (1-indexed) for tracking
 
         Returns:
             Binary mask of QR codes to remove, or None if no QR codes
@@ -266,9 +272,12 @@ class WatermarkDetector:
         if not self.detect_qr_codes or self.qr_detector is None:
             return None
 
-        # Detect QR codes
-        qr_codes = self.qr_detector.detect_qr_codes(image_rgb)
-        self.detected_qr_codes = qr_codes
+        # Detect QR codes for current page
+        qr_codes = self.qr_detector.detect_qr_codes(image_rgb, page_num)
+        self.current_page_qr_codes = qr_codes  # Store current page only
+
+        # Accumulate across pages
+        self.detected_qr_codes.extend(qr_codes)
 
         if not qr_codes:
             return None
@@ -340,11 +349,12 @@ class WatermarkDetector:
             "codes": to_remove,
         }
 
-    def detect_watermark_mask(self, image_rgb):
+    def detect_watermark_mask(self, image_rgb, page_num=1):
         """Detect watermark regions using selected method.
 
         Args:
             image_rgb: Input image in RGB format
+            page_num: Page number (1-indexed) for tracking
 
         Returns:
             Binary mask of detected watermark regions
@@ -357,10 +367,16 @@ class WatermarkDetector:
 
         # Then detect and add QR codes if enabled
         if self.detect_qr_codes:
-            qr_mask = self.detect_qr_codes_mask(image_rgb)
+            qr_mask = self.detect_qr_codes_mask(image_rgb, page_num)
             if qr_mask is not None:
-                # Combine watermark and QR code masks
-                watermark_mask = cv2.bitwise_or(watermark_mask, qr_mask)
+                # QR codes should override text protection
+                # Dilate QR mask slightly to ensure complete removal
+                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+                qr_mask_dilated = cv2.dilate(qr_mask, kernel, iterations=1)
+
+                # Combine: watermark_mask OR qr_mask_dilated
+                # This ensures QR codes are removed even if text protection would preserve them
+                watermark_mask = cv2.bitwise_or(watermark_mask, qr_mask_dilated)
 
         return watermark_mask
 
