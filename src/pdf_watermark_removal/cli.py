@@ -57,7 +57,7 @@ def validate_yolo_setup(detection_method, yolo_model, verbose):
                 border_style="red",
             )
         )
-        raise click.Abort()
+        raise click.Abort() from None
 
     # Check if model file exists (unless it's a model name that will be auto-downloaded)
     model_path = Path(yolo_model)
@@ -96,13 +96,13 @@ def parse_pages(pages_str):
             try:
                 start, end = part.split("-")
                 pages.extend(range(int(start), int(end) + 1))
-            except ValueError:
-                raise ValueError(f"Invalid page range: {part}")
+            except ValueError as err:
+                raise ValueError(f"Invalid page range: {part}") from err
         else:
             try:
                 pages.append(int(part))
-            except ValueError:
-                raise ValueError(f"Invalid page number: {part}")
+            except ValueError as err:
+                raise ValueError(f"Invalid page number: {part}") from err
 
     return sorted(set(pages)) if pages else None
 

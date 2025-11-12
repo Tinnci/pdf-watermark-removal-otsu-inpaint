@@ -114,7 +114,7 @@ class YOLOWatermarkDetector:
                     f"[YOLO{self.version.value.upper()}] Loaded PyTorch model: {model_path}"
                 )
         except Exception as e:
-            raise RuntimeError(f"Failed to load YOLO model: {e}")
+            raise RuntimeError(f"Failed to load YOLO model: {e}") from e
 
     def _load_onnx_model(self, model_path: str) -> None:
         """Load ONNX Runtime model."""
@@ -143,7 +143,7 @@ class YOLOWatermarkDetector:
                     f"[YOLO{self.version.value.upper()}] Providers: {self.session.get_providers()}"
                 )
         except Exception as e:
-            raise RuntimeError(f"Failed to load ONNX model: {e}")
+            raise RuntimeError(f"Failed to load ONNX model: {e}") from e
 
     def preprocess(
         self, image_rgb: np.ndarray, target_size: int = 640

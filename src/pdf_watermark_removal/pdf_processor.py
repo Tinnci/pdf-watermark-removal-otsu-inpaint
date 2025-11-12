@@ -35,7 +35,7 @@ class PDFProcessor:
         except ImportError:
             raise ImportError(
                 "PyMuPDF is required for PDF processing. Install it with: pip install PyMuPDF"
-            )
+            ) from None
 
         pdf_path = Path(pdf_path)
         if not pdf_path.exists():
@@ -86,7 +86,7 @@ class PDFProcessor:
         except ImportError:
             raise ImportError(
                 "PyMuPDF is required for PDF processing. Install it with: pip install PyMuPDF"
-            )
+            ) from None
 
         pdf_path = Path(pdf_path)
         if not pdf_path.exists():
