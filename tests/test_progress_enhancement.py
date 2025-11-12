@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Test suite for enhanced progress bar tracking in watermark removal pipeline."""
 
+import importlib.util
 import time
 from unittest.mock import MagicMock, Mock, patch
-
-import numpy as np
-import pytest
 
 try:
     import cv2
@@ -13,15 +11,14 @@ try:
 except ImportError:
     CV2_AVAILABLE = False
 
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
+import numpy as np
+import pytest
 
 # Import the modules to test
 from pdf_watermark_removal.watermark_detector import WatermarkDetector
 from pdf_watermark_removal.watermark_remover import WatermarkRemover
+
+YOLO_AVAILABLE = importlib.util.find_spec("ultralytics") is not None
 
 
 class ProgressTracker:
@@ -119,7 +116,7 @@ class TestProgressTracking:
         mock_progress.update = Mock(side_effect=tracker.update_callback)
 
         # Perform detection with progress tracking
-        mask = detector.detect_watermark_mask(
+        detector.detect_watermark_mask(
             sample_image,
             page_num=1,
             progress=mock_progress,
@@ -138,8 +135,6 @@ class TestProgressTracking:
 
     def test_qr_detection_progress(self, sample_image_with_qr):
         """Test progress tracking when QR code detection is enabled."""
-        tracker = ProgressTracker()
-
         detector = WatermarkDetector(
             detection_method="traditional",
             detect_qr_codes=True,
@@ -147,11 +142,6 @@ class TestProgressTracking:
             remove_all_qr_codes=False,
             verbose=False
         )
-
-        # Mock progress updates
-        mock_progress = Mock()
-        mock_task_id = Mock()
-        mock_progress.update = Mock(side_effect=tracker.update_callback)
 
         # Perform detection with QR code scanning
         mask = detector.detect_qr_codes_mask(
@@ -178,7 +168,7 @@ class TestProgressTracking:
         mock_task_id = Mock()
         mock_progress.update = Mock(side_effect=tracker.update_callback)
 
-        mask = detector.detect_watermark_mask(
+        detector.detect_watermark_mask(
             sample_image,
             page_num=1,
             progress=mock_progress,
@@ -211,7 +201,7 @@ class TestProgressTracking:
         with patch.object(remover, '_process_single_pass') as mock_pass:
             mock_pass.return_value = (sample_image, True)
 
-            result = remover.remove_watermark_multi_pass(
+            remover.remove_watermark_multi_pass(
                 sample_image,
                 passes=3,
                 page_num=1,
@@ -239,7 +229,7 @@ class TestProgressTracking:
         mock_task_id = Mock()
         mock_progress.update = Mock(side_effect=tracker.update_callback)
 
-        mask = detector.detect_watermark_mask(
+        detector.detect_watermark_mask(
             clean_image,
             page_num=1,
             progress=mock_progress,
@@ -266,10 +256,10 @@ class TestProgressTracking:
 
         # Simulate an error during detection
         with patch.object(detector, '_traditional_detect_mask') as mock_detect:
-            mock_detect.side_effect = Exception("Detection failed")
+            mock_detect.side_effect = ValueError("Detection failed")
 
-            with pytest.raises(Exception):
-                mask = detector.detect_watermark_mask(
+            with pytest.raises(ValueError):
+                detector.detect_watermark_mask(
                     sample_image,
                     page_num=1,
                     progress=mock_progress,

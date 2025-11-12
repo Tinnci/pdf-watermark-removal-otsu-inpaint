@@ -254,9 +254,10 @@ class WatermarkDetector:
                 if qr.category in self.qr_code_categories_to_remove
             ]
         else:
-            # Default: Remove advertisements and unknown codes
+            # Default: Remove advertisements, unknown codes, and website QR codes
+            # Website QR codes are commonly used as watermarks
             return [
-                qr for qr in qr_codes if qr.category in ["advertisement", "unknown"]
+                qr for qr in qr_codes if qr.category in ["advertisement", "unknown", "website"]
             ]
 
     def detect_qr_codes_mask(self, image_rgb, page_num=1):
