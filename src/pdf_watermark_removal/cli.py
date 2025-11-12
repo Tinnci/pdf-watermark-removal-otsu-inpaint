@@ -805,6 +805,20 @@ def main(
                             f"| str:{stats_info['strength']:.1f} "
                             f"| rad:{stats_info['dynamic_radius']}[/dim]"
                         )
+
+                    # Add QR code removal feedback
+                    if detect_qr_codes:
+                        qr_summary = remover.detector.get_qr_removal_summary()
+                        if qr_summary and qr_summary["to_remove"] > 0:
+                            status_msg += f" [cyan]| QR:{qr_summary['to_remove']}"
+                            if qr_summary.get("categories"):
+                                cats = ", ".join(
+                                    f"{k}={v}"
+                                    for k, v in qr_summary["categories"].items()
+                                )
+                                status_msg += f" ({cats})"
+                            status_msg += "[/cyan]"
+
                     status_msg += "[/green]"
 
                     progress.update(page_task, description=status_msg)
@@ -865,6 +879,57 @@ def main(
             stats.set_watermark_color(watermark_color, coverage=100.0)
         output_size_mb = os.path.getsize(output_pdf) / (1024 * 1024)
         stats.set_output(output_pdf, output_size_mb)
+
+        # Display QR code summary if any were processed
+        if detect_qr_codes:
+            qr_codes = remover.detector.get_detected_qr_codes()
+            if qr_codes:
+                console.print("\n[bold cyan]QR Code Detection Summary:[/bold cyan]")
+
+                # Determine which codes were removed
+                if remove_all_qr_codes:
+                    codes_to_remove = qr_codes
+                elif qr_categories_list:
+                    codes_to_remove = [
+                        qr for qr in qr_codes if qr.category in qr_categories_list
+                    ]
+                else:
+                    codes_to_remove = [
+                        qr
+                        for qr in qr_codes
+                        if qr.category in ["advertisement", "unknown"]
+                    ]
+
+                # Build summary
+                categories_found = {}
+                categories_removed = {}
+                for qr in qr_codes:
+                    categories_found[qr.category] = (
+                        categories_found.get(qr.category, 0) + 1
+                    )
+
+                for qr in codes_to_remove:
+                    categories_removed[qr.category] = (
+                        categories_removed.get(qr.category, 0) + 1
+                    )
+
+                # Display summary
+                console.print(
+                    f"  [cyan]Detected:[/cyan] {len(qr_codes)} total | "
+                    f"[green]Removed:[/green] {len(codes_to_remove)}"
+                )
+
+                if categories_found:
+                    found_str = ", ".join(
+                        f"{cat}:{count}" for cat, count in categories_found.items()
+                    )
+                    console.print(f"  [dim]Found categories:[/dim] {found_str}")
+
+                if categories_removed:
+                    removed_str = ", ".join(
+                        f"{cat}:{count}" for cat, count in categories_removed.items()
+                    )
+                    console.print(f"  [dim]Removed categories:[/dim] {removed_str}\n")
 
         # Set final QR code statistics
         if detect_qr_codes:

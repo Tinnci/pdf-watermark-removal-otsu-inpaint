@@ -265,6 +265,10 @@ class WatermarkDetector:
             ]
 
         if not codes_to_remove:
+            if self.verbose and qr_codes:
+                print(
+                    f"Found {len(qr_codes)} QR code(s) but none matched removal criteria"
+                )
             return None
 
         # Create mask for QR codes to remove
@@ -284,6 +288,45 @@ class WatermarkDetector:
             List of QRCodeInfo objects
         """
         return self.detected_qr_codes
+
+    def get_qr_removal_summary(self):
+        """Get summary of QR codes detected and marked for removal.
+
+        Returns:
+            Dictionary with summary information
+        """
+        if not self.detected_qr_codes:
+            return None
+
+        total = len(self.detected_qr_codes)
+
+        # Determine which codes were/will be removed
+        if self.remove_all_qr_codes:
+            to_remove = self.detected_qr_codes
+        elif self.qr_code_categories_to_remove:
+            to_remove = [
+                qr
+                for qr in self.detected_qr_codes
+                if qr.category in self.qr_code_categories_to_remove
+            ]
+        else:
+            to_remove = [
+                qr
+                for qr in self.detected_qr_codes
+                if qr.category in ["advertisement", "unknown"]
+            ]
+
+        # Categorize
+        categories = {}
+        for qr in to_remove:
+            categories[qr.category] = categories.get(qr.category, 0) + 1
+
+        return {
+            "total_detected": total,
+            "to_remove": len(to_remove),
+            "categories": categories,
+            "codes": to_remove,
+        }
 
     def detect_watermark_mask(self, image_rgb):
         """Detect watermark regions using selected method.
