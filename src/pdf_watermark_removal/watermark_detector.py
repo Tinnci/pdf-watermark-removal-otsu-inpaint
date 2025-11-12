@@ -230,6 +230,30 @@ class WatermarkDetector:
 
         return self.qr_detector.detect_qr_codes(image_rgb)
 
+    def _filter_qr_codes_for_removal(self, qr_codes):
+        """
+        Filters a list of detected QR codes based on removal criteria.
+
+        Args:
+            qr_codes (list): A list of QRCodeInfo objects.
+
+        Returns:
+            list: A list of QRCodeInfo objects that should be removed.
+        """
+        if self.remove_all_qr_codes:
+            return qr_codes
+        elif self.qr_code_categories_to_remove:
+            return [
+                qr
+                for qr in qr_codes
+                if qr.category in self.qr_code_categories_to_remove
+            ]
+        else:
+            # Default: Remove advertisements and unknown codes
+            return [
+                qr for qr in qr_codes if qr.category in ["advertisement", "unknown"]
+            ]
+
     def detect_qr_codes_mask(self, image_rgb):
         """Create mask for QR codes that should be removed.
 
@@ -249,20 +273,8 @@ class WatermarkDetector:
         if not qr_codes:
             return None
 
-        # Determine which QR codes to remove
-        if self.remove_all_qr_codes:
-            codes_to_remove = qr_codes
-        elif self.qr_code_categories_to_remove:
-            codes_to_remove = [
-                qr
-                for qr in qr_codes
-                if qr.category in self.qr_code_categories_to_remove
-            ]
-        else:
-            # Default: remove advertisements and unknown codes
-            codes_to_remove = [
-                qr for qr in qr_codes if qr.category in ["advertisement", "unknown"]
-            ]
+        # Determine which QR codes to remove using the new helper
+        codes_to_remove = self._filter_qr_codes_for_removal(qr_codes)
 
         if not codes_to_remove:
             if self.verbose and qr_codes:
@@ -289,6 +301,21 @@ class WatermarkDetector:
         """
         return self.detected_qr_codes
 
+    def _categorize_qr_codes(self, qr_codes_list):
+        """
+        Categorizes a list of QR codes by their category.
+
+        Args:
+            qr_codes_list (list): A list of QRCodeInfo objects.
+
+        Returns:
+            dict: A dictionary where keys are QR code categories and values are their counts.
+        """
+        categories = {}
+        for qr in qr_codes_list:
+            categories[qr.category] = categories.get(qr.category, 0) + 1
+        return categories
+
     def get_qr_removal_summary(self):
         """Get summary of QR codes detected and marked for removal.
 
@@ -300,26 +327,11 @@ class WatermarkDetector:
 
         total = len(self.detected_qr_codes)
 
-        # Determine which codes were/will be removed
-        if self.remove_all_qr_codes:
-            to_remove = self.detected_qr_codes
-        elif self.qr_code_categories_to_remove:
-            to_remove = [
-                qr
-                for qr in self.detected_qr_codes
-                if qr.category in self.qr_code_categories_to_remove
-            ]
-        else:
-            to_remove = [
-                qr
-                for qr in self.detected_qr_codes
-                if qr.category in ["advertisement", "unknown"]
-            ]
+        # Determine which codes were/will be removed using the helper
+        to_remove = self._filter_qr_codes_for_removal(self.detected_qr_codes)
 
-        # Categorize
-        categories = {}
-        for qr in to_remove:
-            categories[qr.category] = categories.get(qr.category, 0) + 1
+        # Categorize the codes to be removed
+        categories = self._categorize_qr_codes(to_remove)
 
         return {
             "total_detected": total,
@@ -352,6 +364,122 @@ class WatermarkDetector:
 
         return watermark_mask
 
+    def _precise_color_based_detection(self, image_rgb, gray_image):
+        """
+        Performs watermark detection using a precise color-based approach.
+
+        Args:
+            image_rgb: Input image in RGB format.
+            gray_image: Grayscale version of the input image.
+
+        Returns:
+            Binary mask of detected watermark regions.
+        """
+        if self.verbose:
+            print(
+                f"Using precise color-based detection with tolerance {self.color_tolerance}..."
+            )
+
+        # 1. Create raw color mask
+        target_gray = int(np.mean(self.watermark_color[:3]))
+        color_diff = np.abs(gray_image.astype(int) - target_gray)
+        raw_mask = (color_diff < self.color_tolerance).astype(np.uint8) * 255
+
+        # 2. PROTECT FIRST - Apply protection before any morphological operations
+        if self.verbose:
+            print("Protecting text and background *before* mask refinement...")
+
+        # Start with the raw mask
+        protected_mask = raw_mask.copy()
+
+        # Protect white background
+        _, background_mask = cv2.threshold(gray_image, 250, 255, cv2.THRESH_BINARY)
+        protected_mask = cv2.bitwise_and(
+            protected_mask, cv2.bitwise_not(background_mask)
+        )
+
+        # Protect dark text ONLY if it doesn't match watermark color
+        # If watermark color is similar to text (100-150 range), skip text protection
+        # to avoid removing the actual watermark we want to detect
+        if self.protect_text and not (100 <= target_gray <= 150):
+            text_protect_mask = self.get_text_protect_mask(gray_image, raw_mask)
+            protected_mask = cv2.bitwise_and(
+                protected_mask, cv2.bitwise_not(text_protect_mask)
+            )
+
+        # 3. REFINE SECOND - Apply morphological operations to the protected mask
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
+        )
+        opened_mask = cv2.morphologyEx(
+            protected_mask, cv2.MORPH_OPEN, kernel, iterations=1
+        )
+        closed_mask = cv2.morphologyEx(
+            opened_mask, cv2.MORPH_CLOSE, kernel, iterations=2
+        )
+        return closed_mask
+
+    def _automatic_detection_mode(self, image_rgb, gray_image):
+        """
+        Performs watermark detection using a general automatic detection logic.
+
+        Args:
+            image_rgb: Input image in RGB format.
+            gray_image: Grayscale version of the input image.
+
+        Returns:
+            Binary mask of detected watermark regions.
+        """
+        if self.verbose:
+            print("No color specified: Using general detection logic...")
+
+        # 1. Create raw detectors (without morphological operations)
+        binary = cv2.adaptiveThreshold(
+            gray_image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+
+        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+        s_channel = hsv[:, :, 1]
+        saturation_mean = np.mean(s_channel)
+        saturation_threshold = max(30, int(saturation_mean * 0.6))
+        saturation_mask = (s_channel < saturation_threshold).astype(np.uint8) * 255
+
+        # 2. Combine raw detectors
+        combined_mask = cv2.bitwise_or(binary, saturation_mask)
+
+        # 3. PROTECT FIRST - Create safe zones before any refinement
+        if self.verbose:
+            print("Protecting text and background *before* mask refinement...")
+
+        # Protect white background
+        _, background_mask = cv2.threshold(gray_image, 250, 255, cv2.THRESH_BINARY)
+        protected_mask = cv2.bitwise_and(
+            combined_mask, cv2.bitwise_not(background_mask)
+        )
+
+        # Protect dark text
+        if self.protect_text:
+            text_protect_mask = self.get_text_protect_mask(gray_image, protected_mask)
+            protected_mask = cv2.bitwise_and(
+                protected_mask, cv2.bitwise_not(text_protect_mask)
+            )
+
+        # 4. REFINE SECOND - Apply morphological operations to protected mask
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
+        )
+
+        # Remove noise first (opening)
+        opened_mask = cv2.morphologyEx(
+            protected_mask, cv2.MORPH_OPEN, kernel, iterations=1
+        )
+
+        # Fill gaps in watermark regions (closing)
+        closed_mask = cv2.morphologyEx(
+            opened_mask, cv2.MORPH_CLOSE, kernel, iterations=2
+        )
+        return closed_mask
+
     def _traditional_detect_mask(self, image_rgb):
         """Traditional watermark detection using color analysis and structure validation.
 
@@ -368,104 +496,10 @@ class WatermarkDetector:
             print("Converting image to grayscale...")
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
 
-        mask = np.zeros_like(gray)
-
-        # === PRECISE COLOR-BASED MODE ===
         if self.watermark_color is not None:
-            if self.verbose:
-                print(
-                    f"Using precise color-based detection with tolerance {self.color_tolerance}..."
-                )
-
-            # 1. Create raw color mask
-            target_gray = int(np.mean(self.watermark_color[:3]))
-            color_diff = np.abs(gray.astype(int) - target_gray)
-            raw_mask = (color_diff < self.color_tolerance).astype(np.uint8) * 255
-
-            # 2. PROTECT FIRST - Apply protection before any morphological operations
-            if self.verbose:
-                print("Protecting text and background *before* mask refinement...")
-
-            # Start with the raw mask
-            protected_mask = raw_mask.copy()
-
-            # Protect dark text FIRST (before background to avoid interference)
-            if self.protect_text:
-                text_protect_mask = self.get_text_protect_mask(gray, raw_mask)
-                protected_mask = cv2.bitwise_and(
-                    protected_mask, cv2.bitwise_not(text_protect_mask)
-                )
-
-            # Protect white background SECOND
-            _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
-            protected_mask = cv2.bitwise_and(
-                protected_mask, cv2.bitwise_not(background_mask)
-            )
-
-            # 3. REFINE SECOND - Apply morphological operations to the protected mask
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
-            )
-            opened_mask = cv2.morphologyEx(
-                protected_mask, cv2.MORPH_OPEN, kernel, iterations=1
-            )
-            closed_mask = cv2.morphologyEx(
-                opened_mask, cv2.MORPH_CLOSE, kernel, iterations=2
-            )
-            mask = closed_mask
-
-        # === AUTOMATIC DETECTION MODE (no color specified) ===
+            mask = self._precise_color_based_detection(image_rgb, gray)
         else:
-            if self.verbose:
-                print("No color specified: Using general detection logic...")
-
-            # 1. Create raw detectors (without morphological operations)
-            binary = cv2.adaptiveThreshold(
-                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-            )
-
-            hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
-            s_channel = hsv[:, :, 1]
-            saturation_mean = np.mean(s_channel)
-            saturation_threshold = max(30, int(saturation_mean * 0.6))
-            saturation_mask = (s_channel < saturation_threshold).astype(np.uint8) * 255
-
-            # 2. Combine raw detectors
-            combined_mask = cv2.bitwise_or(binary, saturation_mask)
-
-            # 3. PROTECT FIRST - Create safe zones before any refinement
-            if self.verbose:
-                print("Protecting text and background *before* mask refinement...")
-
-            # Protect white background
-            _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
-            protected_mask = cv2.bitwise_and(
-                combined_mask, cv2.bitwise_not(background_mask)
-            )
-
-            # Protect dark text
-            if self.protect_text:
-                text_protect_mask = self.get_text_protect_mask(gray, protected_mask)
-                protected_mask = cv2.bitwise_and(
-                    protected_mask, cv2.bitwise_not(text_protect_mask)
-                )
-
-            # 4. REFINE SECOND - Apply morphological operations to protected mask
-            kernel = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size)
-            )
-
-            # Remove noise first (opening)
-            opened_mask = cv2.morphologyEx(
-                protected_mask, cv2.MORPH_OPEN, kernel, iterations=1
-            )
-
-            # Fill gaps in watermark regions (closing)
-            closed_mask = cv2.morphologyEx(
-                opened_mask, cv2.MORPH_CLOSE, kernel, iterations=2
-            )
-
-            mask = closed_mask
+            mask = self._automatic_detection_mode(image_rgb, gray)
 
         if self.verbose:
             detected_pixels = np.count_nonzero(mask)

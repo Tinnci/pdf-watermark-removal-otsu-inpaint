@@ -196,60 +196,76 @@ class ColorSelector:
         Returns:
             Selected color or None
         """
+        if self._try_preset_mode():
+            return self._preset_suggestion_result()
+
         confidence = recommended.get("confidence", 0)
 
-        # Ask about preset mode first if available
-        if hasattr(self, "_preset_suggestion") and self._preset_suggestion["available"]:
-            try:
-                use_preset = click.confirm(
-                    "\nUse 'electronic-color' preset mode for precise removal?",
-                    default=True,
-                )
-                if use_preset:
-                    self.console.print(
-                        "[green]✓ Applying preset parameters for this session...[/green]"
-                    )
-                    r, g, b = self._preset_suggestion["rgb"]
-                    # Return dict indicating preset mode
-                    return {
-                        "color": (r, g, b),
-                        "use_preset": True,
-                    }
-            except (EOFError, click.Abort):
-                pass
-
-        # High confidence: Just confirm
         if confidence >= 85:
-            try:
-                proceed = click.confirm(
-                    f"\nUse this color ({confidence}% confidence)?", default=True
-                )
-                if proceed:
-                    self.console.print("[green][+] Using recommended color[/green]")
-                    return recommended["rgb"]
-            except (EOFError, click.Abort):
-                self.console.print("[green]Using recommended color[/green]")
-                return recommended["rgb"]
+            return self._handle_high_confidence(recommended)
+        elif confidence >= 70:
+            return self._handle_medium_confidence(recommended, all_colors)
+        else:
+            self.console.print(
+                "\n[yellow]Low confidence - showing alternatives[/yellow]"
+            )
+            return self._select_from_alternatives(all_colors)
 
-        # Medium confidence: Ask if user wants alternatives
-        if confidence >= 70:
-            try:
-                show_alternatives = click.confirm(
-                    f"\nMedium confidence ({confidence}%). Show alternatives?",
-                    default=False,
-                )
-                if show_alternatives:
-                    return self._select_from_alternatives(all_colors)
-                else:
-                    self.console.print("[green][+] Using recommended color[/green]")
-                    return recommended["rgb"]
-            except (EOFError, click.Abort):
-                self.console.print("[green]Using recommended color[/green]")
-                return recommended["rgb"]
+    def _try_preset_mode(self):
+        """Check and apply preset mode if available."""
+        if (
+            not hasattr(self, "_preset_suggestion")
+            or not self._preset_suggestion["available"]
+        ):
+            return False
 
-        # Low confidence: Show alternatives by default
-        self.console.print("\n[yellow]Low confidence - showing alternatives[/yellow]")
-        return self._select_from_alternatives(all_colors)
+        try:
+            return click.confirm(
+                "\nUse 'electronic-color' preset mode for precise removal?",
+                default=True,
+            )
+        except (EOFError, click.Abort):
+            return False
+
+    def _preset_suggestion_result(self):
+        """Return preset mode result."""
+        self.console.print(
+            "[green]✓ Applying preset parameters for this session...[/green]"
+        )
+        r, g, b = self._preset_suggestion["rgb"]
+        return {"color": (r, g, b), "use_preset": True}
+
+    def _handle_high_confidence(self, recommended):
+        """Handle high-confidence color selection."""
+        confidence = recommended.get("confidence", 0)
+        try:
+            proceed = click.confirm(
+                f"\nUse this color ({confidence}% confidence)?", default=True
+            )
+            if proceed:
+                self.console.print("[green][+] Using recommended color[/green]")
+                return recommended["rgb"]
+        except (EOFError, click.Abort):
+            pass
+
+        self.console.print("[green]Using recommended color[/green]")
+        return recommended["rgb"]
+
+    def _handle_medium_confidence(self, recommended, all_colors):
+        """Handle medium-confidence color selection."""
+        confidence = recommended.get("confidence", 0)
+        try:
+            show_alternatives = click.confirm(
+                f"\nMedium confidence ({confidence}%). Show alternatives?",
+                default=False,
+            )
+            if show_alternatives:
+                return self._select_from_alternatives(all_colors)
+        except (EOFError, click.Abort):
+            pass
+
+        self.console.print("[green][+] Using recommended color[/green]")
+        return recommended["rgb"]
 
     def _select_from_alternatives(self, colors):
         """Let user select from alternatives with visual table.
@@ -261,8 +277,11 @@ class ColorSelector:
             Selected color or None
         """
         self.console.print("\n[bold]Select from available colors:[/bold]\n")
+        self._display_color_selection_table(colors)
+        return self._get_user_color_choice(colors)
 
-        # Display selection table with type info
+    def _display_color_selection_table(self, colors):
+        """Display color selection table with previews."""
         table = Table(show_header=True, header_style="bold magenta", padding=(0, 1))
         table.add_column("#", style="cyan", width=3)
         table.add_column("Preview", width=25)
@@ -271,38 +290,56 @@ class ColorSelector:
         table.add_column("Type", style="blue", width=12)
 
         for i, color in enumerate(colors[:10]):
-            rgb = color["rgb"]
-            coverage = color["coverage"]
-            color_type = color["color_type"]
-
-            # Safely convert to int
-            try:
-                r = int(rgb[0]) if hasattr(rgb[0], "__int__") else int(rgb[0])
-                g = int(rgb[1]) if hasattr(rgb[1], "__int__") else int(rgb[1])
-                b = int(rgb[2]) if hasattr(rgb[2], "__int__") else int(rgb[2])
-            except (TypeError, ValueError, IndexError):
-                r, g, b = 128, 128, 128
-
-            # Create colored block with visible characters
-            hex_color = f"#{r:02x}{g:02x}{b:02x}"
-            try:
-                block = Text("█" * 15, style=Style(bgcolor=hex_color, color="black"))
-            except Exception:
-                block = Text("█" * 15)
-
-            type_label = (
-                color_type.value.upper()
-                if hasattr(color_type, "value")
-                else str(color_type)
-            )
-
-            table.add_row(
-                str(i), block, f"RGB({r},{g},{b})", f"{coverage:.1f}%", type_label
-            )
+            self._add_color_row_to_table(table, i, color)
 
         self.console.print(table)
 
-        # Get selection
+    def _add_color_row_to_table(self, table, index, color):
+        """Add a color row to the selection table."""
+        rgb = self._safe_rgb_to_int(color["rgb"])
+        coverage = color["coverage"]
+        color_type = color["color_type"]
+
+        hex_color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+        block = self._create_color_block(hex_color)
+        type_label = self._get_color_type_label(color_type)
+
+        table.add_row(
+            str(index),
+            block,
+            f"RGB({rgb[0]},{rgb[1]},{rgb[2]})",
+            f"{coverage:.1f}%",
+            type_label,
+        )
+
+    def _safe_rgb_to_int(self, rgb):
+        """Safely convert RGB to integers."""
+        try:
+            return (
+                int(rgb[0]) if hasattr(rgb[0], "__int__") else int(rgb[0]),
+                int(rgb[1]) if hasattr(rgb[1], "__int__") else int(rgb[1]),
+                int(rgb[2]) if hasattr(rgb[2], "__int__") else int(rgb[2]),
+            )
+        except (TypeError, ValueError, IndexError):
+            return (128, 128, 128)
+
+    def _create_color_block(self, hex_color):
+        """Create a colored block for display."""
+        try:
+            return Text("█" * 15, style=Style(bgcolor=hex_color, color="black"))
+        except Exception:
+            return Text("█" * 15)
+
+    def _get_color_type_label(self, color_type):
+        """Get label for color type."""
+        return (
+            color_type.value.upper()
+            if hasattr(color_type, "value")
+            else str(color_type)
+        )
+
+    def _get_user_color_choice(self, colors):
+        """Get user's color selection input."""
         while True:
             try:
                 choice = (
@@ -313,7 +350,7 @@ class ColorSelector:
                     .lower()
                 )
 
-                if choice == "a" or choice == "":
+                if choice in ("a", ""):
                     self.console.print("[green]Using automatic detection[/green]")
                     return None
 
@@ -324,10 +361,10 @@ class ColorSelector:
                         f"[green][+] Selected RGB{selected['rgb']}[/green]"
                     )
                     return selected["rgb"]
-                else:
-                    self.console.print(
-                        f"[red]Invalid choice. Enter 0-{len(colors) - 1} or 'a'[/red]"
-                    )
+
+                self.console.print(
+                    f"[red]Invalid choice. Enter 0-{len(colors) - 1} or 'a'[/red]"
+                )
             except ValueError:
                 self.console.print("[red]Invalid input[/red]")
 

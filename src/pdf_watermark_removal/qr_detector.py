@@ -34,6 +34,101 @@ class QRCodeInfo:
     category: str  # For grouping similar QR codes
 
 
+def _is_phone_number(text: str) -> bool:
+    """Check if text looks like a phone number."""
+    # Remove common separators and check for digits
+    cleaned = "".join(c for c in text if c.isdigit() or c in "+()- ")
+    digits = "".join(c for c in cleaned if c.isdigit())
+
+    # Phone numbers typically have 7-15 digits
+    return 7 <= len(digits) <= 15 and any(c.isdigit() for c in text)
+
+
+def _is_coordinates(text: str) -> bool:
+    """Check if text looks like geographic coordinates."""
+    # Simple coordinate pattern matching
+    import re
+
+    coord_pattern = r"-?\d+\.\d+\s*,\s*-?\d+\.\d+"
+    return bool(re.search(coord_pattern, text))
+
+
+def _is_likely_advertisement(text: str) -> bool:
+    """Heuristic to identify advertisement QR codes."""
+    # Common advertisement keywords
+    ad_keywords = [
+        "promo",
+        "discount",
+        "sale",
+        "offer",
+        "deal",
+        "coupon",
+        "advertisement",
+        "ad",
+    ]
+    text_lower = text.lower()
+
+    return any(keyword in text_lower for keyword in ad_keywords)
+
+
+def _is_likely_documentation(text: str) -> bool:
+    """Heuristic to identify documentation QR codes."""
+    # Common documentation patterns
+    doc_keywords = [
+        "help",
+        "support",
+        "manual",
+        "guide",
+        "documentation",
+        "info",
+        "about",
+    ]
+    text_lower = text.lower()
+
+    return any(keyword in text_lower for keyword in doc_keywords)
+
+
+def _is_url(content: str) -> bool:
+    return content.startswith(("http://", "https://", "www."))
+
+
+def _is_wifi(content: str) -> bool:
+    return content.startswith("WIFI:")
+
+
+def _is_contact(content: str) -> bool:
+    return content.startswith("BEGIN:VCARD") or "VCARD" in content.upper()
+
+
+def _is_email(content: str) -> bool:
+    return content.startswith("mailto:") or "@" in content
+
+
+def _is_phone(content: str) -> bool:
+    return content.startswith("tel:") or _is_phone_number(content)
+
+
+def _is_sms(content: str) -> bool:
+    return content.startswith("sms:") or content.startswith("SMSTO:")
+
+
+def _is_location(content: str) -> bool:
+    return content.startswith("geo:") or _is_coordinates(content)
+
+
+def _is_calendar(content: str) -> bool:
+    return content.startswith("BEGIN:VEVENT") or "VEVENT" in content.upper()
+
+
+def _classify_text_content(content: str) -> str:
+    if _is_likely_advertisement(content):
+        return "advertisement"
+    elif _is_likely_documentation(content):
+        return "documentation"
+    else:
+        return "general"
+
+
 class QRCodeDetector:
     """Detects and classifies QR codes in images using multiple methods."""
 
@@ -88,6 +183,40 @@ class QRCodeDetector:
         else:
             return []
 
+    def _create_qrcode_info_from_detection(
+        self, data: str, bbox_coords: np.ndarray, confidence: float
+    ) -> QRCodeInfo:
+        """
+        Helper to create a QRCodeInfo object from raw detection data.
+
+        Args:
+            data (str): Decoded QR code content.
+            bbox_coords (np.ndarray): Bounding box coordinates (e.g., from OpenCV).
+            confidence (float): Confidence score of the detection.
+
+        Returns:
+            QRCodeInfo: An object containing structured QR code information.
+        """
+        # Calculate bounding box from corner points
+        x_coords = bbox_coords[:, 0]
+        y_coords = bbox_coords[:, 1]
+
+        x = int(np.min(x_coords))
+        y = int(np.min(y_coords))
+        width = int(np.max(x_coords) - x)
+        height = int(np.max(y_coords) - y)
+
+        # Classify the QR code content
+        qr_type, category = self._classify_qr_content(data)
+
+        return QRCodeInfo(
+            bbox=(x, y, width, height),
+            confidence=confidence,
+            qr_type=qr_type,
+            content=data,
+            category=category,
+        )
+
     def _detect_opencv(self, image_rgb: np.ndarray) -> List[QRCodeInfo]:
         """Detect QR codes using OpenCV's built-in detector."""
         qr_codes = []
@@ -103,31 +232,14 @@ class QRCodeDetector:
                 # bbox is a numpy array of shape (1, 4, 2) - 4 corner points
                 bbox_points = bbox[0]  # Get the first (and usually only) QR code
 
-                # Calculate bounding box from corner points
-                x_coords = bbox_points[:, 0]
-                y_coords = bbox_points[:, 1]
-
-                x = int(np.min(x_coords))
-                y = int(np.min(y_coords))
-                width = int(np.max(x_coords) - x)
-                height = int(np.max(y_coords) - y)
-
-                # Classify the QR code content
-                qr_type, category = self._classify_qr_content(data)
-
-                qr_info = QRCodeInfo(
-                    bbox=(x, y, width, height),
-                    confidence=0.9,  # OpenCV doesn't provide confidence, use high default
-                    qr_type=qr_type,
-                    content=data,
-                    category=category,
-                )
-
+                qr_info = self._create_qrcode_info_from_detection(
+                    data, bbox_points, 0.9
+                )  # OpenCV doesn't provide confidence, use high default
                 qr_codes.append(qr_info)
 
                 if self.verbose:
                     print(
-                        f"✓ Detected QR code: {qr_type.value} at ({x}, {y}, {width}, {height})"
+                        f"✓ Detected QR code: {qr_info.qr_type.value} at ({qr_info.bbox[0]}, {qr_info.bbox[1]}, {qr_info.bbox[2]}, {qr_info.bbox[3]})"
                     )
 
         except Exception as e:
@@ -153,6 +265,9 @@ class QRCodeDetector:
                 if obj.type == "QRCODE":
                     # Extract bounding box
                     x, y, width, height = obj.rect
+                    bbox_coords = np.array(
+                        [[x, y], [x + width, y], [x + width, y + height], [x, y + height]]
+                    )
 
                     # Decode the data
                     try:
@@ -160,22 +275,14 @@ class QRCodeDetector:
                     except UnicodeDecodeError:
                         data = obj.data.decode("latin-1", errors="ignore")
 
-                    # Classify the QR code content
-                    qr_type, category = self._classify_qr_content(data)
-
-                    qr_info = QRCodeInfo(
-                        bbox=(x, y, width, height),
-                        confidence=0.95,  # Pyzbar is generally reliable
-                        qr_type=qr_type,
-                        content=data,
-                        category=category,
-                    )
-
+                    qr_info = self._create_qrcode_info_from_detection(
+                        data, bbox_coords, 0.95
+                    )  # Pyzbar is generally reliable
                     qr_codes.append(qr_info)
 
                     if self.verbose:
                         print(
-                            f"✓ Detected QR code: {qr_type.value} at ({x}, {y}, {width}, {height})"
+                            f"✓ Detected QR code: {qr_info.qr_type.value} at ({qr_info.bbox[0]}, {qr_info.bbox[1]}, {qr_info.bbox[2]}, {qr_info.bbox[3]})"
                         )
 
         except Exception as e:
@@ -184,113 +291,50 @@ class QRCodeDetector:
 
         return qr_codes
 
-    def _classify_qr_content(self, content: str) -> Tuple[QRCodeType, str]:
-        """Classify QR code content into types and categories.
+    def _classify_qr_content(self, content: str) -> tuple:
+        """Classify QR code content into type and category.
 
         Args:
-            content: Decoded QR code content
+            content: The decoded content of the QR code
 
         Returns:
             Tuple of (QRCodeType, category_string)
         """
-        if not content:
-            return QRCodeType.UNKNOWN, "empty"
+        # Classify by type
+        if _is_url(content):
+            qr_type = QRCodeType.URL
+        elif _is_wifi(content):
+            qr_type = QRCodeType.WIFI
+        elif _is_contact(content):
+            qr_type = QRCodeType.CONTACT
+        elif _is_email(content):
+            qr_type = QRCodeType.EMAIL
+        elif _is_phone(content):
+            qr_type = QRCodeType.PHONE
+        elif _is_sms(content):
+            qr_type = QRCodeType.SMS
+        elif _is_location(content):
+            qr_type = QRCodeType.LOCATION
+        elif _is_calendar(content):
+            qr_type = QRCodeType.CALENDAR
+        else:
+            qr_type = QRCodeType.TEXT
 
-        content = content.strip()
+        # Classify by category
+        if qr_type == QRCodeType.URL:
+            category = "website"
+        elif qr_type == QRCodeType.CONTACT:
+            category = "contact"
+        elif qr_type == QRCodeType.EMAIL:
+            category = "email"
+        elif qr_type == QRCodeType.PHONE:
+            category = "phone"
+        elif qr_type in (QRCodeType.SMS, QRCodeType.LOCATION, QRCodeType.CALENDAR):
+            category = qr_type.value
+        else:
+            category = _classify_text_content(content)
 
-        # URL detection
-        if content.startswith(("http://", "https://", "www.")):
-            return QRCodeType.URL, "website"
-
-        # WiFi configuration
-        if content.startswith("WIFI:"):
-            return QRCodeType.WIFI, "wifi"
-
-        # Contact information (vCard)
-        if content.startswith("BEGIN:VCARD") or "VCARD" in content.upper():
-            return QRCodeType.CONTACT, "contact"
-
-        # Email
-        if content.startswith("mailto:") or "@" in content:
-            return QRCodeType.EMAIL, "email"
-
-        # Phone number
-        if content.startswith("tel:") or self._is_phone_number(content):
-            return QRCodeType.PHONE, "phone"
-
-        # SMS
-        if content.startswith("sms:") or content.startswith("SMSTO:"):
-            return QRCodeType.SMS, "sms"
-
-        # Location/Geographic coordinates
-        if content.startswith("geo:") or self._is_coordinates(content):
-            return QRCodeType.LOCATION, "location"
-
-        # Calendar event
-        if content.startswith("BEGIN:VEVENT") or "VEVENT" in content.upper():
-            return QRCodeType.CALENDAR, "calendar"
-
-        # Plain text - analyze content for patterns
-        if len(content) > 0:
-            # Check for common patterns
-            if self._is_likely_advertisement(content):
-                return QRCodeType.TEXT, "advertisement"
-            elif self._is_likely_documentation(content):
-                return QRCodeType.TEXT, "documentation"
-            else:
-                return QRCodeType.TEXT, "general"
-
-        return QRCodeType.UNKNOWN, "unknown"
-
-    def _is_phone_number(self, text: str) -> bool:
-        """Check if text looks like a phone number."""
-        # Remove common separators and check for digits
-        cleaned = "".join(c for c in text if c.isdigit() or c in "+()- ")
-        digits = "".join(c for c in cleaned if c.isdigit())
-
-        # Phone numbers typically have 7-15 digits
-        return 7 <= len(digits) <= 15 and any(c.isdigit() for c in text)
-
-    def _is_coordinates(self, text: str) -> bool:
-        """Check if text looks like geographic coordinates."""
-        # Simple coordinate pattern matching
-        import re
-
-        coord_pattern = r"-?\d+\.\d+\s*,\s*-?\d+\.\d+"
-        return bool(re.search(coord_pattern, text))
-
-    def _is_likely_advertisement(self, text: str) -> bool:
-        """Heuristic to identify advertisement QR codes."""
-        # Common advertisement keywords
-        ad_keywords = [
-            "promo",
-            "discount",
-            "sale",
-            "offer",
-            "deal",
-            "coupon",
-            "advertisement",
-            "ad",
-        ]
-        text_lower = text.lower()
-
-        return any(keyword in text_lower for keyword in ad_keywords)
-
-    def _is_likely_documentation(self, text: str) -> bool:
-        """Heuristic to identify documentation QR codes."""
-        # Common documentation patterns
-        doc_keywords = [
-            "help",
-            "support",
-            "manual",
-            "guide",
-            "documentation",
-            "info",
-            "about",
-        ]
-        text_lower = text.lower()
-
-        return any(keyword in text_lower for keyword in doc_keywords)
+        return qr_type, category
 
     def group_qr_codes_by_category(
         self, qr_codes: List[QRCodeInfo]

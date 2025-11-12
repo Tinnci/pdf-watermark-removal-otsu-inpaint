@@ -26,6 +26,54 @@ def create_test_image_with_text():
     return image
 
 
+def _create_color_mask(gray_image, target_gray, color_tolerance):
+    """Creates a raw color mask based on a target grayscale value and tolerance."""
+    color_diff = np.abs(gray_image.astype(int) - target_gray)
+    color_mask = (color_diff < color_tolerance).astype(np.uint8) * 255
+    return color_mask
+
+
+def _create_text_protection_mask(gray_image, threshold, kernel_size):
+    """Creates a mask to protect dark text areas."""
+    _, text_protect = cv2.threshold(gray_image, threshold, 255, cv2.THRESH_BINARY_INV)
+    kernel_protect = cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
+    text_protect = cv2.morphologyEx(
+        text_protect, cv2.MORPH_OPEN, kernel_protect, iterations=1
+    )
+    return text_protect
+
+
+def _apply_protection(color_mask, text_protect_mask):
+    """Applies text protection to the color mask."""
+    return cv2.bitwise_and(color_mask, cv2.bitwise_not(text_protect_mask))
+
+
+def _apply_background_protection(protected_mask, gray_image, threshold):
+    """Applies background protection to remove very light areas from the mask."""
+    _, background_mask = cv2.threshold(gray_image, threshold, 255, cv2.THRESH_BINARY)
+    return cv2.bitwise_and(protected_mask, cv2.bitwise_not(background_mask))
+
+
+def _create_debug_visualization(
+    original_image, color_mask, text_protect_mask, protected_mask, final_protected_mask
+):
+    """Creates a comparison image for visualizing each step of the protection process."""
+    step1 = cv2.cvtColor(color_mask, cv2.COLOR_GRAY2BGR)
+    step2 = cv2.cvtColor(text_protect_mask, cv2.COLOR_GRAY2BGR)
+    step3 = cv2.cvtColor(protected_mask, cv2.COLOR_GRAY2BGR)
+    step4 = cv2.cvtColor(final_protected_mask, cv2.COLOR_GRAY2BGR)
+
+    comparison = np.vstack(
+        [
+            np.hstack([original_image, step1]),  # Original vs Raw color mask
+            np.hstack([step2, step3]),  # Text protection vs After text protection
+            np.hstack([step4, step1]),  # Final vs Raw (to see difference)
+        ]
+    )
+    cv2.imwrite("debug_protection_steps.png", comparison)
+    print("   - Saved visualization to debug_protection_steps.png")
+
+
 def debug_protection_steps():
     """Debug each step of the protection process."""
     print("=== DEBUGGING PROTECTION STEPS ===")
@@ -41,8 +89,7 @@ def debug_protection_steps():
     # Step 1: Create raw color mask
     target_gray = 200  # Our watermark color
     color_tolerance = 30
-    color_diff = np.abs(gray.astype(int) - target_gray)
-    color_mask = (color_diff < color_tolerance).astype(np.uint8) * 255
+    color_mask = _create_color_mask(gray, target_gray, color_tolerance)
 
     print("\n1. Raw color mask:")
     print(f"   - Non-zero pixels: {np.count_nonzero(color_mask)}")
@@ -53,14 +100,12 @@ def debug_protection_steps():
     )
 
     # Step 2: Create text protection mask
-    _, text_protect = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
-    kernel_protect = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    text_protect = cv2.morphologyEx(
-        text_protect, cv2.MORPH_OPEN, kernel_protect, iterations=1
-    )
+    text_threshold = 150
+    text_kernel_size = (2, 2)
+    text_protect = _create_text_protection_mask(gray, text_threshold, text_kernel_size)
 
     print("\n2. Text protection mask:")
-    print("   - Threshold: 150 (protects 0-150)")
+    print(f"   - Threshold: {text_threshold} (protects 0-{text_threshold})")
     print(f"   - Non-zero pixels: {np.count_nonzero(text_protect)}")
     print(
         f"   - Text pixels that should be protected: {np.count_nonzero(text_protect)}"
@@ -73,7 +118,7 @@ def debug_protection_steps():
     )
 
     # Step 3: Apply protection
-    protected_mask = cv2.bitwise_and(color_mask, cv2.bitwise_not(text_protect))
+    protected_mask = _apply_protection(color_mask, text_protect)
 
     print("\n3. After text protection:")
     print(f"   - Non-zero pixels: {np.count_nonzero(protected_mask)}")
@@ -82,8 +127,10 @@ def debug_protection_steps():
     )
 
     # Step 4: Background protection
-    _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
-    final_protected = cv2.bitwise_and(protected_mask, cv2.bitwise_not(background_mask))
+    background_threshold = 250
+    final_protected = _apply_background_protection(
+        protected_mask, gray, background_threshold
+    )
 
     print("\n4. After background protection:")
     print(f"   - Non-zero pixels: {np.count_nonzero(final_protected)}")
@@ -93,22 +140,9 @@ def debug_protection_steps():
 
     # Visualize each step
     print("\n5. Creating visualization...")
-    step1 = cv2.cvtColor(color_mask, cv2.COLOR_GRAY2BGR)
-    step2 = cv2.cvtColor(text_protect, cv2.COLOR_GRAY2BGR)
-    step3 = cv2.cvtColor(protected_mask, cv2.COLOR_GRAY2BGR)
-    step4 = cv2.cvtColor(final_protected, cv2.COLOR_GRAY2BGR)
-
-    # Create comparison image
-    comparison = np.vstack(
-        [
-            np.hstack([image, step1]),  # Original vs Raw color mask
-            np.hstack([step2, step3]),  # Text protection vs After text protection
-            np.hstack([step4, step1]),  # Final vs Raw (to see difference)
-        ]
+    _create_debug_visualization(
+        image, color_mask, text_protect, protected_mask, final_protected
     )
-
-    cv2.imwrite("debug_protection_steps.png", comparison)
-    print("   - Saved visualization to debug_protection_steps.png")
 
     # Test with actual detector
     print("\n=== TESTING WITH ACTUAL DETECTOR ===")

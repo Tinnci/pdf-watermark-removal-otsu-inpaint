@@ -114,6 +114,42 @@ class WatermarkRemover:
             "last_radius": self.last_stats.get("dynamic_radius", 0),
         }
 
+    def _detect_and_refine_mask(self, image_rgb):
+        """Detect and refine watermark mask."""
+        mask = self.detector.detect_watermark_mask(image_rgb)
+        return self.detector.refine_mask(mask)
+
+    def _calculate_dynamic_radius(self, mask):
+        """Calculate dynamic inpaint radius based on coverage and strength."""
+        watermark_coverage = np.count_nonzero(mask) / (mask.shape[0] * mask.shape[1])
+        dynamic_radius = max(
+            2,
+            int(self.inpaint_radius + watermark_coverage * 10 * self.inpaint_strength),
+        )
+        return watermark_coverage, dynamic_radius
+
+    def _record_removal_stats(self, watermark_coverage, dynamic_radius):
+        """Record removal statistics for later reference."""
+        self.last_stats = {
+            "coverage": watermark_coverage * 100,
+            "dynamic_radius": dynamic_radius,
+            "strength": self.inpaint_strength,
+        }
+
+    def _apply_inpainting(self, image_rgb, mask, dynamic_radius):
+        """Apply inpainting algorithm to remove watermark."""
+        image_bgr = cv2.cvtColor(image_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
+        restored_bgr = cv2.inpaint(image_bgr, mask, dynamic_radius, cv2.INPAINT_TELEA)
+        return cv2.cvtColor(restored_bgr, cv2.COLOR_BGR2RGB)
+
+    def _apply_final_blending(self, image_rgb, restored, mask):
+        """Apply strength blending if not at maximum strength."""
+        if self.inpaint_strength < 1.5:
+            return self.apply_inpaint_strength(
+                image_rgb, restored, mask, self.inpaint_strength
+            )
+        return restored
+
     def remove_watermark(self, image_rgb):
         """Remove watermark from an image.
 
@@ -126,10 +162,8 @@ class WatermarkRemover:
         if self.verbose:
             print("Detecting watermark regions...")
 
-        mask = self.detector.detect_watermark_mask(image_rgb)
-        mask = self.detector.refine_mask(mask)
+        mask = self._detect_and_refine_mask(image_rgb)
 
-        # Skip processing if no watermark detected
         if np.count_nonzero(mask) == 0:
             if self.verbose:
                 print("No watermark detected, returning original image")
@@ -138,19 +172,8 @@ class WatermarkRemover:
         if self.verbose:
             print(f"Applying inpainting with radius {self.inpaint_radius}...")
 
-        # Calculate dynamic inpaint radius based on watermark coverage and strength
-        watermark_coverage = np.count_nonzero(mask) / (mask.shape[0] * mask.shape[1])
-        dynamic_radius = max(
-            2,
-            int(self.inpaint_radius + watermark_coverage * 10 * self.inpaint_strength),
-        )
-
-        # Record statistics for later reference
-        self.last_stats = {
-            "coverage": watermark_coverage * 100,
-            "dynamic_radius": dynamic_radius,
-            "strength": self.inpaint_strength,
-        }
+        watermark_coverage, dynamic_radius = self._calculate_dynamic_radius(mask)
+        self._record_removal_stats(watermark_coverage, dynamic_radius)
 
         if self.verbose:
             coverage_pct = watermark_coverage * 100
@@ -160,22 +183,40 @@ class WatermarkRemover:
                 f"dynamic radius: {dynamic_radius}"
             )
 
-        # Convert RGB to BGR for OpenCV inpainting (best practice for color accuracy)
-        image_bgr = cv2.cvtColor(image_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
+        restored = self._apply_inpainting(image_rgb, mask, dynamic_radius)
+        return self._apply_final_blending(image_rgb, restored, mask)
 
-        # Apply inpainting using TELEA algorithm
-        restored_bgr = cv2.inpaint(image_bgr, mask, dynamic_radius, cv2.INPAINT_TELEA)
+    def _process_single_pass(self, result, pass_num, passes):
+        """Process a single removal pass."""
+        if self.verbose:
+            print(f"Pass {pass_num + 1}/{passes}")
 
-        # Convert back to RGB
-        restored = cv2.cvtColor(restored_bgr, cv2.COLOR_BGR2RGB)
+        mask = self._detect_and_refine_mask(result)
 
-        # Apply strength blending if not at maximum
-        if self.inpaint_strength < 1.5:
-            restored = self.apply_inpaint_strength(
-                image_rgb, restored, mask, self.inpaint_strength
+        if np.count_nonzero(mask) == 0:
+            if self.verbose:
+                print("No watermark detected, stopping")
+            return result, False
+
+        if pass_num > 0:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            mask = cv2.dilate(mask, kernel, iterations=1)
+
+        watermark_coverage, inpaint_radius = self._calculate_dynamic_radius(mask)
+
+        if self.verbose:
+            coverage_pct = watermark_coverage * 100
+            print(
+                f"Watermark coverage: {coverage_pct:.2f}%, "
+                f"strength: {self.inpaint_strength}, radius: {inpaint_radius}"
             )
 
-        return restored
+        result_inpainted = cv2.inpaint(
+            result.astype(np.uint8), mask, inpaint_radius, cv2.INPAINT_TELEA
+        )
+
+        result = self._apply_final_blending(result, result_inpainted, mask)
+        return result, True
 
     def remove_watermark_multi_pass(self, image_rgb, passes=2):
         """Remove watermark using multiple passes with progressive mask expansion.
@@ -194,53 +235,8 @@ class WatermarkRemover:
         result = image_rgb.copy()
 
         for pass_num in range(passes):
-            if self.verbose:
-                print(f"Pass {pass_num + 1}/{passes}")
-
-            # Detect mask from current result
-            mask = self.detector.detect_watermark_mask(result)
-            mask = self.detector.refine_mask(mask)
-
-            if np.count_nonzero(mask) == 0:
-                if self.verbose:
-                    print("No watermark detected, stopping")
+            result, has_watermark = self._process_single_pass(result, pass_num, passes)
+            if not has_watermark:
                 break
-
-            # Slightly expand mask for subsequent passes to catch remaining traces
-            if pass_num > 0:
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-                mask = cv2.dilate(mask, kernel, iterations=1)
-
-            # Calculate coverage-based radius with strength adjustment
-            watermark_coverage = np.count_nonzero(mask) / (
-                mask.shape[0] * mask.shape[1]
-            )
-            inpaint_radius = max(
-                2,
-                int(
-                    self.inpaint_radius
-                    + watermark_coverage * 10 * self.inpaint_strength
-                ),
-            )
-
-            if self.verbose:
-                coverage_pct = watermark_coverage * 100
-                print(
-                    f"Watermark coverage: {coverage_pct:.2f}%, "
-                    f"strength: {self.inpaint_strength}, radius: {inpaint_radius}"
-                )
-
-            # Apply inpainting
-            result_inpainted = cv2.inpaint(
-                result.astype(np.uint8), mask, inpaint_radius, cv2.INPAINT_TELEA
-            )
-
-            # Apply strength blending
-            if self.inpaint_strength < 1.5:
-                result = self.apply_inpaint_strength(
-                    result, result_inpainted, mask, self.inpaint_strength
-                )
-            else:
-                result = result_inpainted
 
         return result

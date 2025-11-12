@@ -1,4 +1,10 @@
-"""Command-line interface for PDF watermark removal."""
+"""
+Command-line interface for PDF watermark removal.
+
+This module provides the main entry point for the PDF watermark removal tool,
+handling argument parsing, configuration, and orchestrating the watermark
+detection and removal process.
+"""
 
 import os
 import sys
@@ -26,26 +32,23 @@ from .watermark_remover import WatermarkRemover
 console = Console()
 
 
-def validate_yolo_setup(detection_method, yolo_model, verbose):
-    """Validate YOLO dependencies and model availability.
+def _check_ultralytics_available(verbose):
+    """
+    Checks if the `ultralytics` library is installed and available.
 
     Args:
-        detection_method: Detection method ('traditional' or 'yolo')
-        yolo_model: Path to YOLO model file
-        verbose: Verbose logging
+        verbose (bool): If True, prints a success message when ultralytics is found.
 
-    Raises:
-        click.Abort: If YOLO is requested but not available or misconfigured
+    Returns:
+        bool: True if ultralytics is installed, False otherwise. If not installed,
+              it prints instructions for installation.
     """
-    if detection_method != "yolo":
-        return
-
-    # Check if ultralytics is installed
     try:
         from ultralytics import YOLO  # noqa: F401
 
         if verbose:
             console.print("[dim]✓ Ultralytics available[/dim]")
+        return True
     except ImportError:
         console.print(
             Panel(
@@ -57,9 +60,18 @@ def validate_yolo_setup(detection_method, yolo_model, verbose):
                 border_style="red",
             )
         )
-        raise click.Abort() from None
+        return False
 
-    # Check if model file exists (unless it's a model name that will be auto-downloaded)
+
+def _check_yolo_model_file(yolo_model):
+    """
+    Checks if the specified YOLO model file exists or is a known model name.
+    If the model is not found locally and is not a known auto-downloadable model,
+    it prints a warning message.
+
+    Args:
+        yolo_model (str): The path to the YOLO model file or a known model name.
+    """
     model_path = Path(yolo_model)
     is_model_name = yolo_model in ("yolov8n-seg.pt", "yolo12n-seg.pt")
 
@@ -75,6 +87,65 @@ def validate_yolo_setup(detection_method, yolo_model, verbose):
                 border_style="yellow",
             )
         )
+
+
+def validate_yolo_setup(detection_method, yolo_model, verbose):
+    """Validate YOLO dependencies and model availability.
+
+    Args:
+        detection_method: Detection method ('traditional' or 'yolo')
+        yolo_model: Path to YOLO model file
+        verbose: Verbose logging
+
+    Raises:
+        click.Abort: If YOLO is requested but not available or misconfigured
+    """
+    if detection_method != "yolo":
+        return
+
+    if not _check_ultralytics_available(verbose):
+        raise click.Abort() from None
+
+    _check_yolo_model_file(yolo_model)
+
+
+def _parse_page_range(part):
+    """
+    Parses a page range string (e.g., '1-5') into a list of page numbers.
+
+    Args:
+        part (str): A string representing a page range (e.g., "1-5").
+
+    Returns:
+        list[int]: A list of 1-indexed page numbers within the specified range.
+
+    Raises:
+        ValueError: If the input string is not a valid page range format.
+    """
+    try:
+        start, end = part.split("-")
+        return list(range(int(start), int(end) + 1))
+    except ValueError as err:
+        raise ValueError(f"Invalid page range: {part}") from err
+
+
+def _parse_single_page(part):
+    """
+    Parses a single page number string into an integer.
+
+    Args:
+        part (str): A string representing a single page number (e.g., "3").
+
+    Returns:
+        list[int]: A list containing the single 1-indexed page number.
+
+    Raises:
+        ValueError: If the input string is not a valid integer.
+    """
+    try:
+        return [int(part)]
+    except ValueError as err:
+        raise ValueError(f"Invalid page number: {part}") from err
 
 
 def parse_pages(pages_str):
@@ -93,28 +164,24 @@ def parse_pages(pages_str):
     for part in pages_str.split(","):
         part = part.strip()
         if "-" in part:
-            try:
-                start, end = part.split("-")
-                pages.extend(range(int(start), int(end) + 1))
-            except ValueError as err:
-                raise ValueError(f"Invalid page range: {part}") from err
+            pages.extend(_parse_page_range(part))
         else:
-            try:
-                pages.append(int(part))
-            except ValueError as err:
-                raise ValueError(f"Invalid page number: {part}") from err
+            pages.extend(_parse_single_page(part))
 
     return sorted(set(pages)) if pages else None
 
 
 def parse_color(color_str):
-    """Parse color from string format 'R,G,B'.
+    """
+    Parses a color string in 'R,G,B' format into a tuple of integers.
 
     Args:
-        color_str: Color string like "128,128,128"
+        color_str (str): A string representing an RGB color (e.g., "128,128,128").
 
     Returns:
-        Tuple (R, G, B) or None
+        tuple[int, int, int] or None: A tuple (R, G, B) if the string is valid,
+                                     otherwise None. Each component is an integer
+                                     between 0 and 255.
     """
     if not color_str:
         return None
@@ -334,7 +401,10 @@ def main(
 ):
     """Remove watermarks from PDF using Otsu threshold and inpaint."""
     try:
-        # Handle preset mode validation
+        # --- Preset Mode Validation ---
+        # Checks if the 'electronic-color' preset is used and ensures that
+        # the '--color' option is also provided, as it's a requirement for this preset.
+        # It also forces the detection method to 'traditional' if the preset is active.
         if preset == "electronic-color":
             if not color:
                 console.print(
@@ -357,7 +427,8 @@ def main(
                     )
                 detection_method = "traditional"
 
-        # Handle model listing
+        # --- Model Listing ---
+        # If the --list-models flag is set, it lists available YOLO models and exits.
         if list_models:
             from .model_manager import ModelManager
 
@@ -365,7 +436,10 @@ def main(
             manager.list_available_models()
             return
 
-        # Validate required arguments
+        # --- Argument Validation and Setup ---
+        # Ensures that input and output PDF paths are provided, unless only listing models.
+        # Sets the language for internationalization if specified.
+        # Validates the YOLO setup (dependencies and model file) if YOLO detection is enabled.
         if not input_pdf or not output_pdf:
             console.print(
                 "[red]Error: INPUT_PDF and OUTPUT_PDF are required unless using --list-models[/red]"
@@ -382,7 +456,9 @@ def main(
         # Initialize stats
         stats = ProcessingStats(verbose=verbose)
 
-        # Display header
+        # --- Configuration Display ---
+        # Constructs and prints a panel summarizing the processing configuration,
+        # including input/output files and detection method details.
         config_text = f"[bold cyan]{t('title')}[/bold cyan]\n"
         config_text += f"[yellow]Input:[/yellow]  {input_pdf}\n"
         config_text += f"[yellow]Output:[/yellow] {output_pdf}"
@@ -428,6 +504,9 @@ def main(
         if verbose:
             console.print("\n[bold blue]Verbose Mode Enabled[/bold blue]")
 
+        # --- Argument Parsing ---
+        # Parses the specified page range, watermark color, and QR code categories
+        # from the command-line arguments.
         pages_list = parse_pages(pages)
 
         # Parse color if provided
@@ -442,7 +521,9 @@ def main(
 
         # Auto-detect and prompt for QR code scanning will happen after processor is created
 
-        # Handle QR code preset
+        # --- QR Code Preset Handling ---
+        # Applies predefined settings for QR code removal based on the chosen preset
+        # (e.g., 'aggressive', 'conservative', 'ads_only').
         if qr_preset and detect_qr_codes:
             if qr_preset == "aggressive":
                 remove_all_qr_codes = True
@@ -454,7 +535,10 @@ def main(
 
         processor = PDFProcessor(dpi=dpi, verbose=verbose)
 
-        # Auto-detect and prompt for QR code scanning if not explicitly requested
+        # --- Automatic QR Code Detection and User Prompt ---
+        # If QR code detection is not explicitly enabled, this block attempts to
+        # detect QR codes on the first page. If found, it prompts the user to
+        # enable QR code scanning and removal for the current session.
         if not detect_qr_codes:
             # Quick QR code detection on first page to see if there might be QR codes
             with Progress(
@@ -498,7 +582,11 @@ def main(
                     except (EOFError, click.Abort):
                         pass
 
-        # Interactive color selection only needed for traditional method
+        # --- Interactive Color Selection ---
+        # If using the traditional detection method and no color is specified
+        # (neither via --color nor --auto-color), this block initiates an
+        # interactive color selection process using the first page of the PDF.
+        # It also handles the activation of an interactive 'electronic-color' preset.
         use_interactive_preset = False
         # Note: first_page_images might already be loaded from QR auto-detection
 
@@ -543,7 +631,10 @@ def main(
                 first_page_images = processor.pdf_to_images(input_pdf, pages=[1])
                 progress.stop_task(task)
 
-        # Interactive QR code selection
+        # --- Interactive QR Code Selection ---
+        # If QR code detection is enabled and the 'interactive' QR preset is chosen,
+        # this block allows the user to interactively select which detected QR codes
+        # should be removed from the document.
         if detect_qr_codes and qr_preset == "interactive" and first_page_images:
             from .qr_detector import QRCodeDetector
             from .qr_selector import QRCodeSelector
@@ -572,7 +663,10 @@ def main(
             else:
                 console.print("[dim]No QR codes detected in first page[/dim]")
 
-        # Initialize remover with detected/selected color
+        # --- Initialize Watermark Remover ---
+        # Sets up the WatermarkRemover instance with all the configured parameters,
+        # including kernel size, inpainting settings, color detection, text protection,
+        # YOLO parameters (if applicable), and QR code detection/removal settings.
         remover = WatermarkRemover(
             kernel_size=kernel_size,
             inpaint_radius=inpaint_radius,
@@ -596,7 +690,9 @@ def main(
             qr_code_categories_to_remove=qr_categories_list,
         )
 
-        # Display strength configuration if requested
+        # --- Display Strength Configuration ---
+        # If requested via the --show-strength flag, this block retrieves and
+        # displays detailed information about the inpainting strength parameters.
         if show_strength:
             strength_info = remover.get_strength_info()
             strength_table = Panel(
@@ -609,7 +705,9 @@ def main(
             )
             console.print(strength_table)
 
-        # Convert all pages
+        # --- Step 1: Convert PDF to Images ---
+        # Converts the input PDF document into a series of images, one for each page.
+        # This step is crucial as watermark removal operations are performed on images.
         msg = "\n[bold]Step 1:[/bold] [yellow]Converting PDF to images...[/yellow]"
         console.print(msg)
 
@@ -629,7 +727,10 @@ def main(
         )
         console.print(f"[green]Loaded {page_info} pages[/green]\n")
 
-        # Auto-classify document type and optimize parameters (enabled by default)
+        # --- Auto-classify Document Type and Optimize Parameters ---
+        # This section automatically detects the document type (e.g., electronic, scanned)
+        # and suggests or applies optimal processing parameters based on the classification.
+        # It also handles the auto-suggestion of the 'electronic-color' preset.
         auto_classify = not no_auto_classify  # Invert the flag
         classification = None
 
@@ -736,7 +837,9 @@ def main(
             if applied_params and verbose:
                 console.print(f"[dim]   └─ Applied: {', '.join(applied_params)}[/dim]")
 
-        # Debug mode: preview first page detection
+        # --- Debug Mode: Detection Preview ---
+        # If the --debug-mask flag is enabled, this block generates and saves
+        # a preview image of the watermark detection mask for the first page.
         if debug_mask and images:
             console.print(
                 "[bold yellow]Debug Mode: Generating detection preview...[/bold yellow]"
@@ -748,7 +851,9 @@ def main(
                 "[green]✓ Saved debug preview to: debug_watermark_mask.png[/green]\n"
             )
 
-        # Set page dimensions for accurate statistics
+        # --- Set Page Dimensions for Statistics ---
+        # If images were successfully loaded, this block sets the dimensions
+        # of the first page in the statistics tracker for accurate calculations.
         if images:
             page_height, page_width = images[0].shape[:2]
             stats.set_page_size(page_width, page_height)
@@ -763,7 +868,10 @@ def main(
 
         console.print("[bold]Step 2:[/bold] [yellow]Removing watermarks...[/yellow]")
 
-        # Process images with detailed multi-level progress tracking
+        # --- Step 2: Watermark Removal Processing Loop ---
+        # Iterates through each page image, applies the watermark detection and
+        # removal algorithms, and tracks progress and statistics.
+        # Handles multi-pass removal, debug information, and error skipping.
         processed_images = []
         with Progress(
             TextColumn("[progress.description]{task.description}"),
@@ -860,6 +968,9 @@ def main(
 
         console.print("[green]Watermark removal completed[/green]\n")
 
+        # --- Step 3: Convert Images Back to PDF ---
+        # Takes the processed images and combines them into a new PDF document,
+        # which is then saved to the specified output path.
         console.print(
             "[bold]Step 3:[/bold] [yellow]Converting images back to PDF...[/yellow]"
         )
@@ -873,7 +984,10 @@ def main(
             processor.images_to_pdf(processed_images, output_pdf)
             progress.stop_task(task)
 
-        # Update stats
+        # --- Update and Display Statistics ---
+        # Finalizes the processing statistics, including output file size,
+        # and then displays a summary of the entire operation.
+        # This also includes a detailed summary of QR code detection and removal.
         stats.pages_processed = len(processed_images)
         if watermark_color:
             stats.set_watermark_color(watermark_color, coverage=100.0)
@@ -971,6 +1085,9 @@ def main(
         # Display statistics
         stats.display_summary(i18n_t=t)
 
+    # --- Error Handling ---
+    # Catches various exceptions that might occur during the process,
+    # prints an informative error message to the console, and exits with a non-zero status code.
     except FileNotFoundError as e:
         console.print(
             Panel(
