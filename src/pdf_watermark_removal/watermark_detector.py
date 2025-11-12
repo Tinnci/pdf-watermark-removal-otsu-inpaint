@@ -350,7 +350,7 @@ class WatermarkDetector:
         }
 
     def detect_watermark_mask(self, image_rgb, page_num=1, progress=None, task_id=None):
-        """Detect watermark regions using selected method.
+        """Unified artifact detection pipeline: Detection → Protection → Refinement → Combination.
 
         Args:
             image_rgb: Input image in RGB format
@@ -361,46 +361,49 @@ class WatermarkDetector:
         Returns:
             Binary mask of detected watermark regions
         """
-        # First detect traditional watermarks
+        # STEP 1: Parallel Detection (0-30% progress)
         if self.method == "yolo":
             if progress and task_id:
                 progress.update(task_id, description=f"[yellow]Page {page_num}: YOLO inference...")
+            # YOLO returns already-processed masks, so handle differently
             watermark_mask = self.detector.detect_watermark_mask(image_rgb)
+            # For YOLO, we still need to apply unified processing for QR codes and final combination
+            combined_mask = self._unified_yolo_processing(
+                image_rgb, watermark_mask, page_num, progress, task_id
+            )
         else:
             if progress and task_id:
                 progress.update(task_id, description=f"[yellow]Page {page_num}: Color analysis...")
-            watermark_mask = self._traditional_detect_mask(image_rgb, page_num, progress, task_id)
+            # Get raw watermark mask without protection/refinement
+            watermark_mask = self._traditional_detect_mask(image_rgb, page_num, progress, task_id, raw=True)
 
-        # Then detect and add QR codes if enabled
-        if self.detect_qr_codes:
-            if progress and task_id:
-                progress.update(task_id, description=f"[yellow]Page {page_num}: Detecting QR codes...")
+            # Detect QR codes in parallel (if enabled)
+            qr_mask = None
+            if self.detect_qr_codes:
+                if progress and task_id:
+                    progress.update(task_id, advance=10, description=f"[yellow]Page {page_num}: Detecting QR codes...")
+                qr_mask = self.detect_qr_codes_mask(image_rgb, page_num)
 
-            qr_mask = self.detect_qr_codes_mask(image_rgb, page_num)
-            if qr_mask is not None:
-                # QR codes should override text protection
-                # Dilate QR mask slightly to ensure complete removal
-                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-                qr_mask_dilated = cv2.dilate(qr_mask, kernel, iterations=1)
-
-                # Combine: watermark_mask OR qr_mask_dilated
-                # This ensures QR codes are removed even if text protection would preserve them
-                watermark_mask = cv2.bitwise_or(watermark_mask, qr_mask_dilated)
+            # STEP 2-4: Unified Protection, Refinement, and Combination
+            combined_mask = self._unified_protection_and_refinement(
+                image_rgb, watermark_mask, qr_mask, page_num, progress, task_id
+            )
 
         # Always complete progress tracking
         if progress and task_id:
             progress.update(task_id, description=f"[green]✓ Page {page_num}: Detection complete")
             progress.update(task_id, completed=100)
 
-        return watermark_mask
+        return combined_mask
 
-    def _precise_color_based_detection(self, image_rgb, gray_image):
+    def _precise_color_based_detection(self, image_rgb, gray_image, raw=False):
         """
         Performs watermark detection using a precise color-based approach.
 
         Args:
             image_rgb: Input image in RGB format.
             gray_image: Grayscale version of the input image.
+            raw: If True, return raw mask without protection/refinement
 
         Returns:
             Binary mask of detected watermark regions.
@@ -414,6 +417,10 @@ class WatermarkDetector:
         target_gray = int(np.mean(self.watermark_color[:3]))
         color_diff = np.abs(gray_image.astype(int) - target_gray)
         raw_mask = (color_diff < self.color_tolerance).astype(np.uint8) * 255
+
+        # If raw mode, return unprocessed mask
+        if raw:
+            return raw_mask
 
         # 2. PROTECT FIRST - Apply protection before any morphological operations
         if self.verbose:
@@ -449,13 +456,14 @@ class WatermarkDetector:
         )
         return closed_mask
 
-    def _automatic_detection_mode(self, image_rgb, gray_image):
+    def _automatic_detection_mode(self, image_rgb, gray_image, raw=False):
         """
         Performs watermark detection using a general automatic detection logic.
 
         Args:
             image_rgb: Input image in RGB format.
             gray_image: Grayscale version of the input image.
+            raw: If True, return raw mask without protection/refinement
 
         Returns:
             Binary mask of detected watermark regions.
@@ -476,6 +484,10 @@ class WatermarkDetector:
 
         # 2. Combine raw detectors
         combined_mask = cv2.bitwise_or(binary, saturation_mask)
+
+        # If raw mode, return unprocessed mask
+        if raw:
+            return combined_mask
 
         # 3. PROTECT FIRST - Create safe zones before any refinement
         if self.verbose:
@@ -510,7 +522,7 @@ class WatermarkDetector:
         )
         return closed_mask
 
-    def _traditional_detect_mask(self, image_rgb, page_num=1, progress=None, task_id=None):
+    def _traditional_detect_mask(self, image_rgb, page_num=1, progress=None, task_id=None, raw=False):
         """Traditional watermark detection using color analysis and structure validation.
 
         Args:
@@ -518,12 +530,13 @@ class WatermarkDetector:
             page_num: Page number (1-indexed) for tracking
             progress: Rich progress instance for updates
             task_id: Progress task ID for updates
+            raw: If True, return raw mask without protection/refinement
 
         Returns:
             Binary mask of detected watermark regions
         """
         if self.auto_detect_color and self.watermark_color is None:
-            if progress and task_id:
+            if progress and task_id and not raw:
                 progress.update(task_id, description=f"[yellow]Page {page_num}: Auto-detecting color...")
             self.detect_watermark_color(image_rgb)
 
@@ -531,13 +544,13 @@ class WatermarkDetector:
             print("Converting image to grayscale...")
         gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
 
-        if progress and task_id:
+        if progress and task_id and not raw:
             progress.update(task_id, description=f"[yellow]Page {page_num}: Analyzing structure...")
 
         if self.watermark_color is not None:
-            mask = self._precise_color_based_detection(image_rgb, gray)
+            mask = self._precise_color_based_detection(image_rgb, gray, raw=raw)
         else:
-            mask = self._automatic_detection_mode(image_rgb, gray)
+            mask = self._automatic_detection_mode(image_rgb, gray, raw=raw)
 
         if self.verbose:
             detected_pixels = np.count_nonzero(mask)
@@ -546,6 +559,130 @@ class WatermarkDetector:
             print(f"Detected watermark coverage: {percentage:.2f}%")
 
         return mask
+
+    def _unified_protection_and_refinement(self, image_rgb, watermark_mask, qr_mask=None, page_num=1, progress=None, task_id=None):
+        """Apply unified protection and refinement to both watermark and QR masks.
+
+        Args:
+            image_rgb: Input image in RGB format
+            watermark_mask: Raw watermark mask
+            qr_mask: Raw QR code mask (optional)
+            page_num: Page number for tracking
+            progress: Rich progress instance for updates
+            task_id: Progress task ID for updates
+
+        Returns:
+            Combined mask with unified processing
+        """
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+
+        # STEP 1: Apply protections (30-60% progress)
+        if progress and task_id:
+            progress.update(task_id, advance=10, description=f"[yellow]Page {page_num}: Applying protections...")
+
+        # Apply background protection to both masks
+        _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
+        protected_watermark_mask = cv2.bitwise_and(watermark_mask, cv2.bitwise_not(background_mask))
+
+        # Apply text protection ONLY to watermark regions (not QR codes)
+        if self.protect_text:
+            # Don't apply text protection if watermark color is in text-like range (100-150)
+            target_gray = None
+            if self.watermark_color is not None:
+                target_gray = int(np.mean(self.watermark_color[:3]))
+
+            # Only protect text if watermark color is not text-like
+            if target_gray is None or not (100 <= target_gray <= 150):
+                text_protect_mask = self.get_text_protect_mask(gray, protected_watermark_mask)
+                protected_watermark_mask = cv2.bitwise_and(
+                    protected_watermark_mask, cv2.bitwise_not(text_protect_mask)
+                )
+
+        # QR codes get background protection but NOT text protection
+        protected_qr_mask = None
+        if qr_mask is not None:
+            protected_qr_mask = cv2.bitwise_and(qr_mask, cv2.bitwise_not(background_mask))
+
+        # STEP 2: Unified refinement (60-90% progress)
+        if progress and task_id:
+            progress.update(task_id, advance=10, description=f"[yellow]Page {page_num}: Refining masks...")
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.kernel_size, self.kernel_size))
+
+        # Apply same morphological operations to both masks
+        refined_watermark_mask = cv2.morphologyEx(
+            protected_watermark_mask, cv2.MORPH_OPEN, kernel, iterations=1
+        )
+        refined_watermark_mask = cv2.morphologyEx(
+            refined_watermark_mask, cv2.MORPH_CLOSE, kernel, iterations=2
+        )
+
+        refined_qr_mask = None
+        if protected_qr_mask is not None:
+            refined_qr_mask = cv2.morphologyEx(
+                protected_qr_mask, cv2.MORPH_OPEN, kernel, iterations=1
+            )
+            refined_qr_mask = cv2.morphologyEx(
+                refined_qr_mask, cv2.MORPH_CLOSE, kernel, iterations=2
+            )
+
+        # STEP 3: Final combination (90-100% progress)
+        if progress and task_id:
+            progress.update(task_id, advance=5, description=f"[yellow]Page {page_num}: Combining masks...")
+
+        # Merge masks: QR codes take priority over watermarks
+        combined_mask = refined_watermark_mask.copy()
+        if refined_qr_mask is not None:
+            # Dilate QR mask slightly for complete removal
+            qr_mask_dilated = cv2.dilate(refined_qr_mask, kernel, iterations=1)
+            combined_mask = cv2.bitwise_or(combined_mask, qr_mask_dilated)
+
+        return combined_mask
+
+    def _unified_yolo_processing(self, image_rgb, yolo_mask, page_num=1, progress=None, task_id=None):
+        """Handle YOLO masks with unified QR processing.
+
+        YOLO masks are already processed, so we only need to:
+        1. Detect QR codes if enabled
+        2. Apply minimal unified processing (background protection, combination)
+
+        Args:
+            image_rgb: Input image in RGB format
+            yolo_mask: Processed YOLO watermark mask
+            page_num: Page number for tracking
+            progress: Rich progress instance for updates
+            task_id: Progress task ID for updates
+
+        Returns:
+            Combined mask with QR codes added
+        """
+        # Detect QR codes if enabled
+        qr_mask = None
+        if self.detect_qr_codes:
+            if progress and task_id:
+                progress.update(task_id, advance=10, description=f"[yellow]Page {page_num}: Detecting QR codes...")
+            qr_mask = self.detect_qr_codes_mask(image_rgb, page_num)
+
+        # Apply minimal unified processing
+        if progress and task_id:
+            progress.update(task_id, advance=10, description=f"[yellow]Page {page_num}: Finalizing mask...")
+
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+
+        # Apply background protection to both masks
+        _, background_mask = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
+        protected_yolo_mask = cv2.bitwise_and(yolo_mask, cv2.bitwise_not(background_mask))
+
+        combined_mask = protected_yolo_mask.copy()
+        if qr_mask is not None:
+            # Apply background protection to QR mask too
+            protected_qr_mask = cv2.bitwise_and(qr_mask, cv2.bitwise_not(background_mask))
+            # Dilate QR mask slightly for complete removal
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+            qr_mask_dilated = cv2.dilate(protected_qr_mask, kernel, iterations=1)
+            combined_mask = cv2.bitwise_or(combined_mask, qr_mask_dilated)
+
+        return combined_mask
 
     def refine_mask(self, mask, min_area=100, max_area=5000):
         """Refine the detected mask by removing small noise and text-like components.

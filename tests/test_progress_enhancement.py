@@ -2,10 +2,10 @@
 """Test suite for enhanced progress bar tracking in watermark removal pipeline."""
 
 import time
-import pytest
+from unittest.mock import MagicMock, Mock, patch
+
 import numpy as np
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+import pytest
 
 try:
     import cv2
@@ -22,7 +22,6 @@ except ImportError:
 # Import the modules to test
 from pdf_watermark_removal.watermark_detector import WatermarkDetector
 from pdf_watermark_removal.watermark_remover import WatermarkRemover
-from pdf_watermark_removal.qr_detector import QRCodeDetector
 
 
 class ProgressTracker:
