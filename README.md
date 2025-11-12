@@ -1,12 +1,12 @@
 # PDF Watermark Removal Tool
 
 [![PyPI version](https://badge.fury.io/py/pdf-watermark-removal-otsu-inpaint.svg)](https://pypi.org/project/pdf-watermark-removal-otsu-inpaint/)
-[![Version](https://img.shields.io/badge/version-0.4.1-green.svg)](https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint/releases)
+[![Version](https://img.shields.io/badge/version-0.5.5-green.svg)](https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint/releases)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub](https://img.shields.io/badge/GitHub-Tinnci-black.svg)](https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint)
 
-A command-line tool to remove watermarks from PDF files using advanced image processing techniques including adaptive thresholding, intelligent color detection, and OpenCV inpainting. Features interactive watermark color selection and beautiful CLI with progress visualization.
+A sophisticated command-line tool that removes watermarks from PDF files using advanced computer vision techniques including adaptive thresholding, intelligent color detection, and OpenCV inpainting. Features interactive watermark color selection and beautiful CLI with progress visualization.
 
 ## 🎯 Key Features
 
@@ -16,562 +16,307 @@ A command-line tool to remove watermarks from PDF files using advanced image pro
   - Confidence-scored classification
   - Can be disabled with `--no-auto-classify`
 
-- **Intelligent Color Detection**: Automatically classifies colors as BACKGROUND, WATERMARK, TEXT, or NOISE
+- **🎨 Intelligent Color Detection**: Automatically classifies colors as BACKGROUND, WATERMARK, TEXT, or NOISE
   - Multi-pass analysis with confidence scoring
   - Interactive visual color picker with preview
   - Smart background protection to avoid false positives
   
-- **Advanced Watermark Detection**:
+- **🔍 Advanced Watermark Detection**:
   - Adaptive Gaussian thresholding for better precision than traditional Otsu
   - Combined color and saturation analysis
   - Automatic background (white area) exclusion
   - Dark text protection (RGB 0-80 preserved)
   - Morphological operations for noise removal
   
-- **Precision Inpainting**:
+- **🛠️ Precision Inpainting**:
   - OpenCV TELEA algorithm with dynamic radius adjustment
   - Coverage-based parameter optimization
   - **Strength control**: `--inpaint-strength` (0.5-1.5) for fine-tuned removal
   - Progressive multi-pass removal for stubborn watermarks
   - Accurate color space handling (RGB ↔ BGR conversion)
 
-- **Production Quality CLI**:
+- **✨ Production Quality CLI**:
   - Beautiful Rich-formatted panels and progress bars
   - Multi-level progress tracking (Overall + Per-Page)
   - Internationalization support (English & Chinese)
   - Detailed logging and statistics
   - Error handling with `--skip-errors` to continue on failures
 
-- **Flexible Processing**:
+- **⚙️ Flexible Processing**:
   - Batch process multiple pages
   - Select specific pages or ranges
   - Adjustable DPI for different quality needs
   - Per-page statistics and coverage reporting
   - Debug mode: `--debug-mask` generates detection preview
-  - Strength visibility: `--show-strength` displays parameters
 
-## Installation
+## 🚀 Quick Start
 
-### Using uv (recommended)
+### Installation
 
+Choose your preferred installation method:
+
+#### Option 1: UV Tool (Recommended)
 ```bash
+# Install from PyPI
 uv tool install pdf-watermark-removal-otsu-inpaint
+
+# Or install with YOLO support
+uv tool install pdf-watermark-removal-otsu-inpaint[yolo]
+
+# Run directly
+pdf-watermark-removal input.pdf output.pdf
 ```
 
-### Using pip
-
+#### Option 2: Development Installation
 ```bash
-pip install pdf-watermark-removal-otsu-inpaint
-```
-
-### With YOLO Detection Support
-
-For using YOLO-based watermark detection (more accurate on complex watermarks):
-
-```bash
-# YOLO support (CPU only)
-pip install pdf-watermark-removal-otsu-inpaint[yolo]
-
-# YOLO with GPU acceleration (requires PyTorch and CUDA)
-pip install pdf-watermark-removal-otsu-inpaint[yolo-gpu]
-```
-
-### From local directory
-
-```bash
+# Clone and install in development mode
+git clone https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint.git
 cd pdf-watermark-removal-otsu-inpaint
 uv tool install --editable .
+
+# Or with development dependencies
+uv pip install -e ".[dev]"
 ```
 
-## Quick Start
+#### Option 3: From PyPI with pip
+```bash
+pip install pdf-watermark-removal-otsu-inpaint
 
-### Basic Usage (All Pages, Interactive Color Selection)
+# With YOLO support
+pip install pdf-watermark-removal-otsu-inpaint[yolo]
+```
+
+### Basic Usage
 
 ```bash
+# Simple watermark removal
 pdf-watermark-removal input.pdf output.pdf
-```
 
-### Specify Watermark Color Explicitly
-
-```bash
+# Specify watermark color
 pdf-watermark-removal input.pdf output.pdf --color "200,200,200"
-```
 
-The color format is R,G,B with values from 0-255.
+# Process specific pages
+pdf-watermark-removal input.pdf output.pdf --pages 1,3,5-10
 
-### Preset Mode: Electronic Documents with Precise Color Removal
-
-For electronic documents (PDFs generated from software, not scanned), use the `electronic-color` preset for optimal precise color removal:
-
-```bash
-pdf-watermark-removal input.pdf output.pdf --preset electronic-color --color "200,200,200"
-```
-
-This preset:
-- Uses **extremely strict color matching** (tolerance: 10) - only removes the exact color specified
-- Optimized for electronic documents with discrete colors and sharp edges
-- Protects black text and white backgrounds
-- Uses traditional method (no YOLO required)
-- Perfect for removing watermarks of a specific color without affecting other content
-
-### Skip Interactive Selection
-
-```bash
-pdf-watermark-removal input.pdf output.pdf --auto-color
-```
-
-### Process Specific Pages Only
-
-```bash
-pdf-watermark-removal input.pdf output.pdf --pages 1,3,5
-pdf-watermark-removal input.pdf output.pdf --pages 1-10
-```
-
-### With Advanced Options
-
-```bash
-pdf-watermark-removal input.pdf output.pdf \
-  --color "180,180,180" \
-  --kernel-size 5 \
-  --inpaint-radius 3 \
-  --multi-pass 2 \
-  --dpi 300 \
-  --verbose
-```
-
-## Command-Line Options
-
-```
-INPUT_PDF                     Path to input PDF file
-OUTPUT_PDF                    Path to output PDF file
-
-OPTIONS:
-  --color TEXT                Watermark color as 'R,G,B' (e.g., '128,128,128')
-                             Interactive selection if not specified
-  --auto-color                Skip interactive selection, use automatic detection
-  --pages TEXT                Pages to process (e.g., '1,3,5' or '1-5')
-                             Process all pages if not specified
-  
-  --kernel-size INTEGER       Morphological kernel size (default: 3)
-  --inpaint-radius INTEGER    Inpainting radius (default: 2)
-  --inpaint-strength FLOAT    Inpainting strength 0.5-1.5 (default: 1.0)
-                             0.5=light, 1.0=medium, 1.5=strong
-  --multi-pass INTEGER        Number of removal passes (default: 1)
-  --dpi INTEGER               DPI for PDF rendering (default: 150)
-  
-  --color-tolerance INTEGER   Color matching tolerance 0-255 (default: 30)
-                             Lower=stricter matching
-  --protect-text              Protect dark text from removal (default: True)
-  
-  --preset                    Preset mode: 'electronic-color' for precise color
-                             removal on electronic documents (requires --color)
-  --no-auto-classify          Disable automatic document type detection
-  --show-strength             Display per-page strength parameters
-  --debug-mask                Save debug preview of watermark detection
-  --skip-errors               Skip pages with errors instead of failing
-  
-  --detection-method          Detection method: 'traditional' or 'yolo'
-                             (default: traditional)
-  --yolo-model PATH          Path to YOLO segmentation model (.pt or .onnx)
-                             (default: yolov8n-seg.pt)
-  --yolo-conf FLOAT          YOLO confidence threshold 0-1 (default: 0.25)
-  --yolo-device              YOLO device: 'cpu', 'cuda', or 'auto'
-                             (default: auto)
-  --yolo-version             YOLO version: 'v8' or 'v12' (default: v8)
-                             v8=fast baseline, v12=higher accuracy
-  
-  --lang TEXT                 Force language (zh_CN, en_US)
-                             Auto-detect if not specified
-  -v, --verbose               Enable verbose output
-  --help                      Show help message
-```
-
-## Common Use Cases
-
-### One-Click Intelligent Processing
-```bash
-# Auto-classify document type and optimize parameters
-pdf-watermark-removal input.pdf output.pdf
-```
-
-### Fine-Tuned Control
-```bash
-# Adjust removal strength for stubborn watermarks
-pdf-watermark-removal input.pdf output.pdf --inpaint-strength 1.3
-
-# Stricter color matching for electronic documents
-pdf-watermark-removal input.pdf output.pdf --color-tolerance 15
-
-# Multi-pass for heavy watermarks
-pdf-watermark-removal input.pdf output.pdf --multi-pass 2
-
-# Debug mode to inspect detection
-pdf-watermark-removal input.pdf output.pdf --debug-mask --verbose
-```
-
-### Batch Processing with Error Handling
-```bash
-# Continue processing if some pages fail
-pdf-watermark-removal large_document.pdf output.pdf --skip-errors
-
-# Process subset of pages only
-pdf-watermark-removal input.pdf output.pdf --pages 1-50 --skip-errors
-```
-
-### YOLO-Based Detection (Accurate for Complex Watermarks)
-```bash
-# Use YOLOv8-seg for detection (fast baseline)
+# Use YOLO detection for complex watermarks
 pdf-watermark-removal input.pdf output.pdf --detection-method yolo
 
-# Use YOLO12-seg for detection (higher accuracy, slightly slower)
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-version v12
-
-# Use specialized watermark model (maximum accuracy)
-pdf-watermark-removal input.pdf output.pdf \
-  --detection-method yolo \
-  --yolo-version v11
-
-# YOLO with GPU acceleration
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-device cuda
-
-# YOLO with lower confidence threshold (detect more regions)
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-conf 0.15
-
-# YOLO v11 with aggressive detection (recommended for complex watermarks)
-pdf-watermark-removal input.pdf output.pdf \
-  --detection-method yolo \
-  --yolo-version v11 \
-  --yolo-conf 0.10 \
-  --yolo-device cpu
-
-# YOLO with custom model and confidence
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo \
-  --yolo-model "/path/to/custom-model.pt" \
-  --yolo-conf 0.30
-
-# List available models
-pdf-watermark-removal --list-models
+# Adjust removal strength
+pdf-watermark-removal input.pdf output.pdf --inpaint-strength 1.2 --multi-pass 2
 ```
 
-**Confidence Threshold Guide**:
-- `--yolo-conf 0.25` (default): Balanced detection, fewer false positives
-- `--yolo-conf 0.15`: More aggressive, detects subtle watermarks
-- `--yolo-conf 0.10`: Very aggressive, catches thin/faint watermarks
-- `--yolo-conf 0.05`: Maximum sensitivity, may detect noise
+## 📋 Command Reference
 
-## How It Works
-
-### 1. Color Detection & Selection
-- Analyzes first page to detect dominant colors
-- Shows most common non-photo colors (likely watermark/text)
-- User selects watermark color or confirms automatic selection
-- Supports coarse (3) and fine (10) color options
-
-## Algorithm Details
-
-### 0. Document Type Classification
-- Analyzes first page using 4 visual dimensions:
-  - **Color Discreteness**: Electronic docs have <50 colors, scanned >200 colors
-  - **Text Concentration**: Pure black text (0-50 gray) indicates electronic doc
-  - **Edge Sharpness**: Laplacian variance analysis
-  - **Noise Level**: Denoising comparison
-- Returns confidence score and auto-optimized parameters
-- User can disable with `--no-auto-classify`
-
-### 1. Intelligent Color Classification
-The tool uses multi-dimensional analysis to classify colors:
-- **BACKGROUND**: Gray level 240-255 + coverage >60% → confidence 0%
-- **WATERMARK**: Gray level 100-250 + coverage 1-20% → dynamic confidence (20-100%)
-- **TEXT**: Gray level 0-80 + coverage <5% → confidence 0%
-- **NOISE**: All other patterns → confidence 0%
-
-Confidence scoring formula:
-```
-confidence = (gray_factor × 0.5 + coverage_factor × 0.5) × 100
-           + bonus_for_typical_range
-```
-
-### 2. Adaptive Watermark Detection
-Combines multiple detection methods:
-- **Adaptive Gaussian Thresholding**: Handles varying lighting conditions
-- **Color-based Detection**: Uses detected watermark color to refine mask
-- **Saturation Analysis**: Identifies low-saturation regions (watermarks, text)
-- **Background Protection**: Explicitly excludes white/bright areas (>250 gray)
-- **Morphological Refinement**: Opens (removes small noise) then closes (fills holes)
-
-### 2. Adaptive Watermark Detection
-Combines multiple detection strategies:
-- **Adaptive Gaussian Thresholding**: Better than traditional Otsu for varying lighting
-- **Color-based Detection**: Matches detected watermark color (±tolerance)
-- **Saturation Analysis**: Identifies low-saturation watermark regions
-- **Background Protection**: Excludes very bright areas (>250 gray)
-- **Text Protection**: Preserves dark text regions (0-80 gray)
-
-Dynamic Detection Parameters:
-```
-- Color tolerance: Adjusts based on document type (18-32)
-- Kernel size: 3 for electronic, 5 for scanned documents
-- Aspect ratio filtering: Removes thin text-like components
-```
-
-### 3. Strength-Controlled Inpainting
-Uses OpenCV's TELEA algorithm with blending:
-- **Inpaint Strength** (0.5-1.5): Controls blend ratio
-  - 0.5 = 50% blend (preserve original)
-  - 1.0 = 100% replacement (standard)
-  - 1.5 = 150% radius boost (aggressive)
-- **Dynamic Radius**: base_radius + (coverage × 10 × strength)
-- **Multi-pass Support**: Progressive expansion for stubborn watermarks
-- **Color Space Accuracy**: RGB→BGR conversion for proper processing
-
-### 4. PDF Reconstruction
-Preserves document fidelity:
-- Maintains original page layout
-- Preserves resolution based on input DPI
-- Reconstructs from processed image sequence
-
-## Detection Methods
-
-### Traditional CV (Default)
-Fast, lightweight detection using adaptive thresholding and color analysis:
-- **Speed**: ~100-200ms per page (CPU)
-- **Accuracy**: 85-95% for standard watermarks
-- **Requirements**: opencv-python, numpy
-- **Best for**: Simple, uniform watermarks; fast processing
-
-### YOLO-based Detection (Experimental)
-Deep learning-based instance segmentation for complex watermarks:
-
-#### YOLOv8 (Fast Baseline)
+### Core Options
 ```bash
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo
+pdf-watermark-removal input.pdf output.pdf [OPTIONS]
+
+Options:
+  --kernel-size INTEGER         Morphological kernel size [default: 3]
+  --inpaint-radius INTEGER      Radius for inpainting [default: 2]
+  --inpaint-strength FLOAT      Removal strength 0.5-1.5 [default: 1.0]
+  --pages TEXT                  Pages to process ('1,3,5' or '1-5')
+  --multi-pass INTEGER          Number of removal passes [default: 1]
+  --dpi INTEGER                DPI for conversion [default: 150]
+  --color TEXT                 Watermark color 'R,G,B'
+  --auto-color                 Skip interactive color selection
+  --protect-text               Protect dark text [default: True]
+  --color-tolerance INTEGER    Color matching tolerance [default: 30]
+  --debug-mask                 Save detection preview
+  --skip-errors                Continue on page errors
+  --show-strength             Display strength parameters
+  --no-auto-classify          Disable document classification
+  --detection-method TEXT     'traditional' or 'yolo' [default: traditional]
+  --yolo-model PATH           YOLO model path
+  --yolo-conf FLOAT          YOLO confidence threshold [default: 0.25]
+  --yolo-device TEXT          Device: 'auto', 'cpu', 'cuda'
+  --yolo-version TEXT         YOLO version: 'v8', 'v12', 'v11'
+  --preset TEXT              Preset: 'electronic-color'
+  --lang TEXT                Language: 'en_US', 'zh_CN'
+  --verbose, -v              Enable verbose output
+  --list-models              List available YOLO models
+  --help                     Show this message and exit.
 ```
-- **Speed**: ~500-1000ms per page (CPU), ~100-200ms (GPU)
-- **Accuracy**: 90-98% for complex/semi-transparent watermarks
-- **Model**: yolov8n-seg.pt (6.7 MB)
-- **Parameters**: 3.2M
-- **Best for**: Mixed content, semi-transparent, overlapping watermarks
 
-#### YOLO12 (Higher Accuracy)
-```bash
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-version v12
-```
-- **Speed**: ~600-1200ms per page (CPU), ~120-250ms (GPU)
-- **Accuracy**: 92-99% with region attention mechanism
-- **Model**: yolo12n-seg.pt (6.5 MB)
-- **Parameters**: 2.6M (lighter)
-- **Architecture**: Region Attention + R-ELAN (better for small/complex patterns)
-- **Best for**: Complex documents, small watermarks, multi-scale patterns
-
-#### YOLO11 XLarge (Specialized Watermark Detection) ⭐
-```bash
-pdf-watermark-removal input.pdf output.pdf \
-  --detection-method yolo \
-  --yolo-model yolo11x-watermark.pt
-```
-- **Speed**: ~2-3 seconds per page (CPU), ~500ms-1s (GPU)
-- **Model**: yolo11x-watermark.pt (101 MB) - Large specialized segmentation model
-- **Training**: Trained specifically on watermark detection dataset
-- **Best for**: Complex watermark patterns, high-precision detection
-- **⚠️ Trade-offs**: Larger model (101 MB), slower inference, requires more resources
-- **Advantage**: Detects and segments watermark regions (not just classifies)
-
-**When to use**:
-- Maximum precision watermark detection and segmentation
-- Production systems with complex/diverse watermarks
-- When processing time is not critical
-- With GPU acceleration for reasonable speed
-
-#### Quick Selection Guide
-
-| Use Case | Model | Speed | Disk |
-|----------|-------|-------|------|
-| Fast processing | yolov8n-seg.pt | ⚡⚡⚡ | ✓✓✓ |
-| Balanced | yolov12n-seg.pt | ⚡⚡ | ✓✓✓ |
-| Best accuracy | yolo11x-watermark.pt | ⚡ | ✓ |
-
-**Quick Recommendations**:
-- 📱 **Default/Fast**: Use `yolov8n-seg.pt` (balanced speed and accuracy)
-- ⚡ **Balanced**: Use `yolov12n-seg.pt` (better accuracy, slightly slower)
-- 🎯 **Maximum Accuracy**: Use `yolo11x-watermark.pt` (specialized, requires GPU)
-
----
-
-## Fine-Tuning YOLO Detection
-
-### Confidence Threshold (--yolo-conf)
-
-The `--yolo-conf` parameter controls detection sensitivity (0.0-1.0):
+### Advanced Examples
 
 ```bash
-# Default: 0.25 - Good balance
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo
+# Electronic documents with precise color removal
+pdf-watermark-removal report.pdf clean.pdf --preset electronic-color --color "210,210,210"
 
-# 0.15 - More aggressive detection
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-conf 0.15
+# Scanned documents with higher tolerance
+pdf-watermark-removal scan.pdf clean.pdf --color-tolerance 40 --inpaint-strength 1.3
 
-# 0.10 - Very aggressive (catches faint watermarks)
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-conf 0.10
+# Multi-pass removal for stubborn watermarks
+pdf-watermark-removal stubborn.pdf clean.pdf --multi-pass 3 --inpaint-strength 1.5
 
-# 0.05 - Maximum sensitivity (may include noise)
-pdf-watermark-removal input.pdf output.pdf --detection-method yolo --yolo-conf 0.05
+# Debug mode with detailed output
+pdf-watermark-removal input.pdf output.pdf --verbose --debug-mask --show-strength
+
+# Batch processing with YOLO detection
+pdf-watermark-removal batch/*.pdf output/ --detection-method yolo --yolo-version v12
 ```
 
-**Recommendations**:
-- **Faint/Thin watermarks**: Use `0.10-0.15`
-- **Standard watermarks**: Use default `0.25`
-- **Heavy watermarks**: Use `0.30-0.50`
-- **Testing**: Start with `0.25`, adjust based on results
+## 🏗️ System Architecture
 
-## Requirements
+### Core Components
 
-- Python 3.8+
-- uv package manager (for tool installation)
+```
+src/pdf_watermark_removal/
+├── cli.py                    # Main CLI entry point and user interface
+├── pdf_processor.py          # PDF I/O and image conversion
+├── watermark_detector.py     # Traditional CV and YOLO detection
+├── watermark_remover.py      # OpenCV inpainting implementation
+├── color_selector.py         # Interactive color selection UI
+├── color_analyzer.py         # Intelligent color classification
+├── document_classifier.py    # Document type detection and optimization
+├── yolo_detector.py          # YOLO-based watermark detection
+├── model_manager.py          # YOLO model management and downloads
+├── i18n.py                   # Internationalization support
+└── stats.py                  # Processing statistics and reporting
+```
 
-### Automatic Dependencies
-- OpenCV (opencv-python) - Image processing and inpainting
-- NumPy - Array operations
-- Pillow - Image I/O and PDF generation
-- PyPDF - PDF utilities
-- Click - CLI framework
-- PyMuPDF - Fast PDF rendering
-- Rich - Beautiful CLI with colors and progress bars
+### Processing Pipeline
 
-## Examples
+```
+PDF Input → Document Classification → Color Analysis → Watermark Detection → 
+Inpainting Removal → PDF Reconstruction → Output
+```
 
-## Example 1: Interactive Color Selection with Rich UI
+### Detection Methods
+
+1. **Traditional CV (Default)**: Fast, lightweight using adaptive thresholding and color analysis
+2. **YOLOv8**: Balanced speed and accuracy for complex watermarks  
+3. **YOLOv12**: Higher accuracy with region attention mechanism
+4. **YOLO11x**: Specialized watermark detection model (maximum accuracy)
+
+### Recent Improvements
+
+**"Protect First, Refine Second" Approach**: Fixed text "etching" by applying protection before morphological operations, achieving 59.6% reduction in text artifacts.
+
+## 🔧 Development
+
+### Repository Structure
+```
+pdf-watermark-removal-otsu-inpaint/
+├── .github/                    # CI/CD workflows
+├── docs/                       # Documentation and development images
+├── example/                    # Example files and usage samples
+├── src/                        # Source code
+├── tests/                      # Test scripts and validation tools
+├── [documentation files]       # This README and other docs
+└── [configuration files]       # pyproject.toml, uv.lock, etc.
+```
+
+### Setting Up Development Environment
+
 ```bash
-$ pdf-watermark-removal contract.pdf contract_clean.pdf
+# Clone repository
+git clone https://github.com/Tinnci/pdf-watermark-removal-otsu-inpaint.git
+cd pdf-watermark-removal-otsu-inpaint
 
-┌─────────────────────────────── Configuration ──────────────────────────────┐
-│ PDF Watermark Removal Tool                                                │
-│ Input:  contract.pdf                                                      │
-│ Output: contract_clean.pdf                                                │
-└────────────────────────────────────────────────────────────────────────────┘
+# Create virtual environment
+uv venv
+source .venv/bin/activate  # Unix
+.
+.venv\Scripts\activate     # Windows
 
-Would you like to interactively select the watermark color? [y/N]: y
-Use coarse color selection (3 main colors)? [Y/n]: y
+# Install in development mode
+uv pip install -e ".[dev]"
 
-============================================================
-WATERMARK COLOR DETECTION
-============================================================
-
-Analyzing 3 most common colors in the document...
-
-Detected colors (likely watermark or text):
-
-┌─────┬──────────────────────────┬──────────────────┬────────────┬──────────┐
-│ Index │ Color Preview          │ RGB Value        │ Gray Level │ Percentage │
-├─────┼──────────────────────────┼──────────────────┼────────────┼──────────┤
-│ 0   │ ████████████████████░░░░ │ RGB(200, 200, 200) │ 200        │ 45.3%   │
-│ 1   │ ███████████░░░░░░░░░░░░░ │ RGB(150, 150, 150) │ 150        │ 28.1%   │
-│ 2   │ ████████░░░░░░░░░░░░░░░░ │ RGB(100, 100, 100) │ 100        │ 18.2%   │
-└─────┴──────────────────────────┴──────────────────┴────────────┴──────────┘
-
-Select color number (0-indexed) or 'a' for automatic [a]: 0
-
-┌───────────────────── Selected Watermark Color ─────────────────┐
-│                                                                 │
-│                                                                 │
-│ RGB Value: (200, 200, 200)                                     │
-│ Gray Level: 200                                                │
-│ Percentage in document: 45.30%                                 │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-
-Step 1: Converting PDF to images...
-⠋ Loading PDF ────────────────────────────────── 0%
-Loaded 34 pages
-
-Step 2: Removing watermarks...
-Processing pages ████████████████████░░░░░░░░░░ 66% - 0:00:45
-Watermark removal completed
-
-Step 3: Converting images back to PDF...
-⠙ Saving PDF
-
-┌──────────────────────────── Success ──────────────────────────┐
-│ Watermark removal completed successfully!                    │
-│ Output saved to: contract_clean.pdf                          │
-└──────────────────────────────────────────────────────────────┘
+# Run tests
+python tests/test_watermark.py
+python tests/fix_validation/test_protection_order.py
 ```
 
-### Example 2: Explicit Color and Multi-Pass
+### Code Quality
+
 ```bash
-pdf-watermark-removal document.pdf clean.pdf \
-  --color "220,220,220" \
-  --multi-pass 2 \
-  --verbose
+# Format and lint code
+ruff format src/
+ruff check src/
+ruff check --fix src/
 ```
 
-### Example 3: High-Quality Processing
+### Repository Structure Analysis
+
+When analyzing the project structure, exclude the virtual environment directory to avoid cluttering the output:
 ```bash
-pdf-watermark-removal thesis.pdf thesis_clean.pdf \
-  --dpi 300 \
-  --kernel-size 5 \
-  --inpaint-radius 3 \
-  --auto-color
+# Exclude .venv when using tree command
+tree /F /A | findstr /V "\.venv"
+
+# Or use PowerShell to exclude multiple directories
+tree /F /A | Where-Object { $_ -notmatch "\.venv|__pycache__|\.ruff_cache" }
 ```
 
-## Performance
+## 📊 Performance & Results
 
-Typical processing times on modern systems:
-- Single page: 1-2 seconds
-- 10 pages: 10-20 seconds
-- 100 pages: 2-5 minutes
+### Quantitative Improvements (v0.5.3+)
+- **59.6% reduction** in text artifacts after "Protect First, Refine Second" fix
+- **29.7% reduction** in total mask pixels while maintaining detection accuracy
+- **Multi-level progress tracking** for better user experience
+- **Dynamic parameter optimization** based on document type
 
-Factors affecting speed:
-- PDF resolution (DPI)
-- Page complexity
-- Inpaint radius
-- Multi-pass count
-- System CPU/memory
+### Processing Performance
+- **Traditional CV**: ~1-3 seconds per page at 150 DPI
+- **YOLO-based**: ~3-8 seconds per page depending on model
+- **Memory efficient**: Processes large documents in chunks
+- **Multi-threading safe**: Can process multiple documents concurrently
 
-## Troubleshooting
+## 🔍 Debugging
 
-### Poor Watermark Detection
+### Debug Mode
+```bash
+# Enable verbose logging
+pdf-watermark-removal input.pdf output.pdf --verbose
 
-**Symptoms**: Watermark not fully detected
+# Generate detection preview
+pdf-watermark-removal input.pdf output.pdf --debug-mask
 
-**Solutions**:
-1. Try fine color selection: `--color "180,180,180"` with different values
-2. Increase kernel size: `--kernel-size 5` or `--kernel-size 7`
-3. Use multi-pass: `--multi-pass 2`
+# Show processing parameters
+pdf-watermark-removal input.pdf output.pdf --show-strength
+```
 
-### Artifacts or Blurriness
+### Common Issues & Solutions
 
-**Symptoms**: Cleaned PDF has blurry or distorted areas
+| Issue | Solution |
+|-------|----------|
+| Poor detection | Adjust `--kernel-size` or try different `--color-tolerance` |
+| Text artifacts | Use `--protect-text` and lower `--inpaint-strength` |
+| Memory errors | Lower `--dpi` or process specific `--pages` |
+| YOLO not available | Install with `pip install pdf-watermark-removal-otsu-inpaint[yolo]` |
 
-**Solutions**:
-1. Reduce inpaint radius: `--inpaint-radius 1`
-2. Lower DPI: `--dpi 150` (default is good for most documents)
-3. Single pass: `--multi-pass 1` (default)
+## 🌍 Internationalization
 
-### Memory Issues
+The tool supports multiple languages:
+- **English** (default): `pdf-watermark-removal input.pdf output.pdf`
+- **Chinese**: `pdf-watermark-removal input.pdf output.pdf --lang zh_CN`
 
-**Symptoms**: "Out of memory" error on large PDFs
+## 📚 Additional Documentation
 
-**Solutions**:
-1. Lower DPI: `--dpi 100`
-2. Process specific pages: `--pages 1-50` (then 51-100, etc.)
-3. Increase system available memory
+For detailed technical information, see:
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete system architecture and technical details
+- **[CLI_WORKFLOW_ANALYSIS.md](CLI_WORKFLOW_ANALYSIS.md)** - Detailed processing pipeline analysis
+- **[PROTECTION_FIX_SUMMARY.md](PROTECTION_FIX_SUMMARY.md)** - Technical details of the text protection improvements
+- **[tests/README.md](tests/README.md)** - Testing infrastructure and validation tools
 
-## License
+## 🤝 Contributing
 
-MIT
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes and add tests
+4. Ensure code quality: `ruff check src/ && ruff format src/`
+5. Commit your changes: `git commit -am 'Add new feature'`
+6. Push to the branch: `git push origin feature-name`
+7. Submit a pull request
 
-## Contributing
+## 📄 License
 
-Contributions welcome! Areas for enhancement:
-- GPU acceleration for large documents
-- Additional inpainting algorithms (e.g., Criminisi)
-- Batch API interface
-- Additional language support
-- Performance benchmarking
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## See Also
+## 🙏 Acknowledgments
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Technical architecture details
-- [INSTALL.md](INSTALL.md) - Installation and development guide
-- [UV_TOOL_GUIDE.md](UV_TOOL_GUIDE.md) - UV tool configuration
-- [ALGORITHM_FIX.md](ALGORITHM_FIX.md) - Detailed algorithm improvements
+- [OpenCV](https://opencv.org/) for computer vision algorithms
+- [Ultralytics](https://ultralytics.com/) for YOLO models
+- [Rich](https://rich.readthedocs.io/) for beautiful terminal UI
+- [UV](https://docs.astral.sh/uv/) for modern Python package management
