@@ -5,9 +5,9 @@ import cv2
 import numpy as np
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from pdf_watermark_removal.watermark_detector import WatermarkDetector
+from src.pdf_watermark_removal.watermark_detector import WatermarkDetector
 
 def create_test_cases():
     """Create various test cases to evaluate text protection."""

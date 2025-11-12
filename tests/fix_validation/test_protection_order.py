@@ -3,6 +3,9 @@
 
 import cv2
 import numpy as np
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.pdf_watermark_removal.watermark_detector import WatermarkDetector
 
 def create_test_image_with_text():
