@@ -1,21 +1,16 @@
-#!/usr/bin/env python3
-"""Test QR code detection functionality."""
-
-import os
-import sys
-
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+"""Test QR code detection functionality using pytest."""
 
 import cv2
 import numpy as np
+import pytest
 
 from pdf_watermark_removal.qr_detector import QRCodeDetector, QRCodeInfo, QRCodeType
 from pdf_watermark_removal.qr_selector import QRCodeSelector
 from pdf_watermark_removal.watermark_detector import WatermarkDetector
 
 
-def create_test_qr_image():
+@pytest.fixture
+def test_qr_image():
     """Create a simple test image with QR code-like patterns."""
     # Create white background
     image = np.ones((200, 200, 3), dtype=np.uint8) * 255
@@ -31,17 +26,12 @@ def create_test_qr_image():
     return image
 
 
-def test_qr_detector_opencv():
+def test_qr_detector_opencv(test_qr_image):
     """Test OpenCV QR code detector."""
-    print("Testing OpenCV QR Detector...")
-
     detector = QRCodeDetector(method="opencv", verbose=False)
-    test_image = create_test_qr_image()
-
+    
     # Test detection
-    qr_codes = detector.detect_qr_codes(test_image)
-
-    print(f"Detected {len(qr_codes)} QR codes")
+    qr_codes = detector.detect_qr_codes(test_qr_image)
 
     # Test should work even with simple pattern (OpenCV may or may not detect)
     assert isinstance(qr_codes, list)
@@ -54,13 +44,9 @@ def test_qr_detector_opencv():
         assert hasattr(qr, "content")
         assert hasattr(qr, "category")
 
-    print("[PASS] OpenCV QR Detector test passed")
-
 
 def test_qr_classification():
     """Test QR code content classification."""
-    print("Testing QR Code Classification...")
-
     detector = QRCodeDetector(method="opencv", verbose=False)
 
     # Test URL classification
@@ -85,13 +71,9 @@ def test_qr_classification():
     assert email_type == QRCodeType.EMAIL
     assert email_category == "email"
 
-    print("[PASS] QR Code Classification test passed")
-
 
 def test_qr_grouping():
     """Test QR code grouping functionality."""
-    print("Testing QR Code Grouping...")
-
     # Create mock QR codes
     mock_qr_codes = [
         QRCodeInfo(
@@ -118,13 +100,9 @@ def test_qr_grouping():
     assert len(grouped["documentation"]) == 1
     assert len(grouped["email"]) == 1
 
-    print("[PASS] QR Code Grouping test passed")
-
 
 def test_qr_mask_creation():
     """Test QR code mask creation."""
-    print("Testing QR Code Mask Creation...")
-
     # Create mock QR codes
     mock_qr_codes = [
         QRCodeInfo(
@@ -144,15 +122,9 @@ def test_qr_mask_creation():
     assert mask.dtype == np.uint8
     assert np.any(mask > 0)  # Should have some masked regions
 
-    print("[PASS] QR Code Mask Creation test passed")
 
-
-def test_watermark_detector_with_qr():
+def test_watermark_detector_with_qr(test_qr_image):
     """Test watermark detector with QR code detection enabled."""
-    print("Testing Watermark Detector with QR Codes...")
-
-    test_image = create_test_qr_image()
-
     # Test with QR detection enabled
     detector = WatermarkDetector(
         detect_qr_codes=True,
@@ -163,23 +135,19 @@ def test_watermark_detector_with_qr():
     )
 
     # Test watermark mask detection (includes QR codes)
-    mask = detector.detect_watermark_mask(test_image)
+    mask = detector.detect_watermark_mask(test_qr_image)
 
     assert mask is not None
-    assert mask.shape[:2] == test_image.shape[:2]
+    assert mask.shape[:2] == test_qr_image.shape[:2]
     assert mask.dtype == np.uint8
 
     # Test QR code retrieval
     qr_codes = detector.get_detected_qr_codes()
     assert isinstance(qr_codes, list)
 
-    print("[PASS] Watermark Detector with QR Codes test passed")
-
 
 def test_qr_selector():
     """Test QR code selector functionality."""
-    print("Testing QR Code Selector...")
-
     selector = QRCodeSelector(verbose=False)
 
     # Create mock QR codes
@@ -202,37 +170,3 @@ def test_qr_selector():
 
     ads_only_codes = selector.get_removals_by_preset("ads_only", mock_qr_codes)
     assert len(ads_only_codes) == 1  # Should remove only ads
-
-    print("[PASS] QR Code Selector test passed")
-
-
-def main():
-    """Run all QR code tests."""
-    print("=" * 50)
-    print("QR Code Detection Feature Tests")
-    print("=" * 50)
-
-    try:
-        test_qr_detector_opencv()
-        test_qr_classification()
-        test_qr_grouping()
-        test_qr_mask_creation()
-        test_watermark_detector_with_qr()
-        test_qr_selector()
-
-        print("\n" + "=" * 50)
-        print("[SUCCESS] All QR Code Tests Passed!")
-        print("=" * 50)
-        return True
-
-    except Exception as e:
-        print(f"\n[FAIL] Test failed: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
-
-
-if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)

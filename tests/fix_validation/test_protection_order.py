@@ -30,7 +30,7 @@ def create_test_image_with_text():
     return image
 
 
-def test_protection_order():
+def test_protection_order(tmp_path):
     """Test that protection happens before morphological operations."""
     print("Testing 'Protect First, Refine Second' approach...")
 
@@ -91,8 +91,9 @@ def test_protection_order():
             cv2.cvtColor(mask_auto, cv2.COLOR_GRAY2BGR),
         ]
     )
-    cv2.imwrite("test_protection_results.png", comparison)
-    print("   - Saved visualization to test_protection_results.png")
+    output_path = tmp_path / "test_protection_results.png"
+    cv2.imwrite(str(output_path), comparison)
+    print(f"   - Saved visualization to {output_path}")
 
     # Overall result
     both_passed = (text_pixels == 0) and (text_pixels_auto == 0)
@@ -144,18 +145,31 @@ def test_morphological_operations_order():
 
 
 if __name__ == "__main__":
+    # Manual run support (mocking tmp_path)
+    import shutil
+    from pathlib import Path
+    
     print("=" * 60)
     print("TESTING 'PROTECT FIRST, REFINE SECOND' APPROACH")
     print("=" * 60)
 
-    test1_passed = test_protection_order()
-    test2_passed = test_morphological_operations_order()
+    # Create a temp dir for manual run
+    temp_dir = Path("temp_test_output")
+    temp_dir.mkdir(exist_ok=True)
+    
+    try:
+        test1_passed = test_protection_order(temp_dir)
+        test2_passed = test_morphological_operations_order()
 
-    print("\n" + "=" * 60)
-    print("FINAL RESULTS:")
-    print(f"Basic protection test: {'PASS' if test1_passed else 'FAIL'}")
-    print(f"Morphological order test: {'PASS' if test2_passed else 'FAIL'}")
-    print(
-        f"Overall: {'ALL TESTS PASSED' if test1_passed and test2_passed else 'SOME TESTS FAILED'}"
-    )
-    print("=" * 60)
+        print("\n" + "=" * 60)
+        print("FINAL RESULTS:")
+        print(f"Basic protection test: {'PASS' if test1_passed else 'FAIL'}")
+        print(f"Morphological order test: {'PASS' if test2_passed else 'FAIL'}")
+        print(
+            f"Overall: {'ALL TESTS PASSED' if test1_passed and test2_passed else 'SOME TESTS FAILED'}"
+        )
+        print("=" * 60)
+    finally:
+        # Clean up
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)

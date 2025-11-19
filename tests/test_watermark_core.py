@@ -1,13 +1,16 @@
-"""Tests for watermark removal functionality."""
+"""Tests for watermark removal functionality using pytest."""
 
 import numpy as np
 import cv2
+import pytest
 from pdf_watermark_removal.watermark_detector import WatermarkDetector
 from pdf_watermark_removal.watermark_remover import WatermarkRemover
 
 
-def create_test_image_with_watermark(width=200, height=200):
+@pytest.fixture
+def watermark_image():
     """Create a test image with synthetic watermark."""
+    width, height = 200, 200
     image = np.ones((height, width, 3), dtype=np.uint8) * 200
     cv2.putText(
         image,
@@ -21,26 +24,24 @@ def create_test_image_with_watermark(width=200, height=200):
     return image
 
 
-def test_watermark_detection():
+def test_watermark_detection(watermark_image):
     """Test watermark detection."""
-    image = create_test_image_with_watermark()
     detector = WatermarkDetector()
-    mask = detector.detect_watermark_mask(image)
+    mask = detector.detect_watermark_mask(watermark_image)
     
     assert mask is not None
-    assert mask.shape[:2] == image.shape[:2]
+    assert mask.shape[:2] == watermark_image.shape[:2]
     assert np.any(mask > 0), "Watermark mask should not be empty"
 
 
-def test_watermark_removal():
+def test_watermark_removal(watermark_image):
     """Test watermark removal."""
-    image = create_test_image_with_watermark()
     remover = WatermarkRemover()
-    result = remover.remove_watermark(image)
+    result = remover.remove_watermark(watermark_image)
     
     assert result is not None
-    assert result.shape == image.shape
-    assert result.dtype == image.dtype
+    assert result.shape == watermark_image.shape
+    assert result.dtype == watermark_image.dtype
 
 
 def test_mask_refinement():
@@ -53,17 +54,3 @@ def test_mask_refinement():
     
     assert refined is not None
     assert np.count_nonzero(refined) > 0
-
-
-if __name__ == "__main__":
-    print("Running tests...")
-    test_watermark_detection()
-    print("✓ Watermark detection test passed")
-    
-    test_watermark_removal()
-    print("✓ Watermark removal test passed")
-    
-    test_mask_refinement()
-    print("✓ Mask refinement test passed")
-    
-    print("\nAll tests passed!")

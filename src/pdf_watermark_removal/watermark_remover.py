@@ -114,20 +114,25 @@ class WatermarkRemover:
             "last_radius": self.last_stats.get("dynamic_radius", 0),
         }
 
-    def _detect_and_refine_mask(self, image_rgb, page_num=1, progress=None, task_id=None):
+    def _detect_and_refine_mask(
+        self, image_rgb, page_num=1, progress=None, task_id=None
+    ):
         """Detect and refine watermark mask.
-        
+
         Dynamically adjusts refinement parameters when QR codes are present
         to prevent them from being filtered out due to size constraints.
         """
-        mask = self.detector.detect_watermark_mask(image_rgb, page_num, progress, task_id)
-        
+        mask = self.detector.detect_watermark_mask(
+            image_rgb, page_num, progress, task_id
+        )
+
         # If QR codes were detected on this page, increase max_area to prevent filtering them out.
         # QR codes are large components that exceed typical max_area (5000), so we set it to
         # the full image area to ensure they're preserved in the refined mask.
-        has_qr_codes_on_page = self.detector.current_page_qr_codes
-        
-        if self.detector.method == 'traditional' and has_qr_codes_on_page:
+        if (
+            self.detector.method == "traditional"
+            and self.detector.current_page_qr_codes
+        ):
             # Use full image area as max_area to preserve QR codes
             image_area = mask.shape[0] * mask.shape[1]
             return self.detector.refine_mask(mask, max_area=image_area)
@@ -182,7 +187,9 @@ class WatermarkRemover:
             print("Detecting watermark regions...")
 
         if progress and task_id:
-            progress.update(task_id, description=f"[yellow]Page {page_num}: Detecting regions...")
+            progress.update(
+                task_id, description=f"[yellow]Page {page_num}: Detecting regions..."
+            )
 
         mask = self._detect_and_refine_mask(image_rgb, page_num, progress, task_id)
 
@@ -190,12 +197,16 @@ class WatermarkRemover:
             if self.verbose:
                 print("No watermark detected, returning original image")
             if progress and task_id:
-                progress.update(task_id, description=f"[green]✓ Page {page_num}: No watermark found")
+                progress.update(
+                    task_id, description=f"[green]✓ Page {page_num}: No watermark found"
+                )
                 progress.update(task_id, completed=100)
             return image_rgb.astype(np.uint8)
 
         if progress and task_id:
-            progress.update(task_id, description=f"[yellow]Page {page_num}: Applying inpainting...")
+            progress.update(
+                task_id, description=f"[yellow]Page {page_num}: Applying inpainting..."
+            )
 
         if self.verbose:
             print(f"Applying inpainting with radius {self.inpaint_radius}...")
@@ -220,7 +231,9 @@ class WatermarkRemover:
 
         return result
 
-    def _process_single_pass(self, result, pass_num, passes, page_num=1, progress=None, task_id=None):
+    def _process_single_pass(
+        self, result, pass_num, passes, page_num=1, progress=None, task_id=None
+    ):
         """Process a single removal pass."""
         if self.verbose:
             print(f"Pass {pass_num + 1}/{passes}")
@@ -252,7 +265,9 @@ class WatermarkRemover:
         result = self._apply_final_blending(result, result_inpainted, mask)
         return result, True
 
-    def remove_watermark_multi_pass(self, image_rgb, passes=2, page_num=1, progress=None, task_id=None):
+    def remove_watermark_multi_pass(
+        self, image_rgb, passes=2, page_num=1, progress=None, task_id=None
+    ):
         """Remove watermark using multiple passes with progressive mask expansion.
 
         Uses a smarter approach: instead of reprocessing the entire image multiple
@@ -275,7 +290,7 @@ class WatermarkRemover:
             if progress and task_id:
                 progress.update(
                     task_id,
-                    description=f"[yellow]Page {page_num}: Pass {pass_num+1}/{passes}..."
+                    description=f"[yellow]Page {page_num}: Pass {pass_num + 1}/{passes}...",
                 )
 
             result, has_watermark = self._process_single_pass(

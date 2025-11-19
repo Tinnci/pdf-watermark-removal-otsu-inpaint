@@ -904,13 +904,15 @@ def main(
 
                     if multi_pass > 1:
                         processed = remover.remove_watermark_multi_pass(
-                            img, passes=multi_pass, page_num=page_num,
-                            progress=progress, task_id=page_task
+                            img,
+                            passes=multi_pass,
+                            page_num=page_num,
+                            progress=progress,
+                            task_id=page_task,
                         )
                     else:
                         processed = remover.remove_watermark(
-                            img, page_num=page_num,
-                            progress=progress, task_id=page_task
+                            img, page_num=page_num, progress=progress, task_id=page_task
                         )
 
                     # Build completion message with optional strength details
