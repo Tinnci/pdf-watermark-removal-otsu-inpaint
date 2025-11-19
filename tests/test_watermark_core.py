@@ -1,8 +1,9 @@
 """Tests for watermark removal functionality using pytest."""
 
-import numpy as np
 import cv2
+import numpy as np
 import pytest
+
 from pdf_watermark_removal.watermark_detector import WatermarkDetector
 from pdf_watermark_removal.watermark_remover import WatermarkRemover
 
@@ -28,7 +29,7 @@ def test_watermark_detection(watermark_image):
     """Test watermark detection."""
     detector = WatermarkDetector()
     mask = detector.detect_watermark_mask(watermark_image)
-    
+
     assert mask is not None
     assert mask.shape[:2] == watermark_image.shape[:2]
     assert np.any(mask > 0), "Watermark mask should not be empty"
@@ -38,7 +39,7 @@ def test_watermark_removal(watermark_image):
     """Test watermark removal."""
     remover = WatermarkRemover()
     result = remover.remove_watermark(watermark_image)
-    
+
     assert result is not None
     assert result.shape == watermark_image.shape
     assert result.dtype == watermark_image.dtype
@@ -49,8 +50,8 @@ def test_mask_refinement():
     detector = WatermarkDetector()
     mask = np.zeros((100, 100), dtype=np.uint8)
     cv2.circle(mask, (50, 50), 30, 255, -1)
-    
+
     refined = detector.refine_mask(mask, min_area=100)
-    
+
     assert refined is not None
     assert np.count_nonzero(refined) > 0

@@ -225,7 +225,7 @@ source .venv/bin/activate  # Unix
 uv pip install -e ".[dev]"
 
 # Run tests
-python tests/test_watermark.py
+python tests/test_watermark_core.py
 python tests/fix_validation/test_protection_order.py
 ```
 
@@ -290,19 +290,6 @@ pdf-watermark-removal input.pdf output.pdf --show-strength
 
 The tool supports multiple languages:
 - **English** (default): `pdf-watermark-removal input.pdf output.pdf`
-- **Chinese**: `pdf-watermark-removal input.pdf output.pdf --lang zh_CN`
-
-## 📚 Additional Documentation
-
-For detailed technical information, see:
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete system architecture and technical details
-- **[CLI_WORKFLOW_ANALYSIS.md](CLI_WORKFLOW_ANALYSIS.md)** - Detailed processing pipeline analysis
-- **[PROTECTION_FIX_SUMMARY.md](PROTECTION_FIX_SUMMARY.md)** - Technical details of the text protection improvements
-- **[tests/README.md](tests/README.md)** - Testing infrastructure and validation tools
-
-## 🤝 Contributing
-
-1. Fork the repository
 2. Create a feature branch: `git checkout -b feature-name`
 3. Make your changes and add tests
 4. Ensure code quality: `ruff check src/ && ruff format src/`

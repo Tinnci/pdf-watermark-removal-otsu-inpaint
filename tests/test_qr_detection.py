@@ -29,7 +29,7 @@ def test_qr_image():
 def test_qr_detector_opencv(test_qr_image):
     """Test OpenCV QR code detector."""
     detector = QRCodeDetector(method="opencv", verbose=False)
-    
+
     # Test detection
     qr_codes = detector.detect_qr_codes(test_qr_image)
 

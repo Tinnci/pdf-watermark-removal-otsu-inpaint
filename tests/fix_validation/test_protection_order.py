@@ -148,7 +148,7 @@ if __name__ == "__main__":
     # Manual run support (mocking tmp_path)
     import shutil
     from pathlib import Path
-    
+
     print("=" * 60)
     print("TESTING 'PROTECT FIRST, REFINE SECOND' APPROACH")
     print("=" * 60)
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     # Create a temp dir for manual run
     temp_dir = Path("temp_test_output")
     temp_dir.mkdir(exist_ok=True)
-    
+
     try:
         test1_passed = test_protection_order(temp_dir)
         test2_passed = test_morphological_operations_order()
