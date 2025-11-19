@@ -270,7 +270,7 @@ class TestProgressTracking:
         summary = tracker.get_summary()
         assert summary['total_updates'] > 0, "Should have attempted progress updates"
 
-    @pytest.mark.skip(reason="Performance test shows expected overhead from progress tracking")
+    # @pytest.mark.skip(reason="Performance test shows expected overhead from progress tracking")
     def test_progress_performance_overhead(self, sample_image):
         """Verify that progress tracking doesn't add significant overhead."""
         # Baseline without progress tracking
